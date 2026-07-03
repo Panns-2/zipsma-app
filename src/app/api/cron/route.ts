@@ -405,10 +405,7 @@ export async function GET(request: Request) {
                                                     // Add + to the phone number for E.164 format if missing
                                                     const e164Phone = formattedPhone.startsWith('233') ? `+${formattedPhone}` : formattedPhone;
                                                     
-                                                    // Try the standard /v1/voice/send or /v1/voice/call endpoint with basic message
-                                                    // Provide actionUrl to fetch the TTS instructions when the call connects.
-                                                    const actionUrl = `${baseUrl}/api/sendexa/action?message=${encodeURIComponent(voiceMessage)}&lang=${voiceLanguage}`;
-                                                    
+                                                    // Try the standard /v1/voice/calls endpoint with native TTS type
                                                     const sendexaResponse = await fetch('https://api.sendexa.co/v1/voice/calls', {
                                                         method: 'POST',
                                                         headers: {
@@ -418,9 +415,10 @@ export async function GET(request: Request) {
                                                         body: JSON.stringify({
                                                             to: e164Phone,
                                                             from: schoolData.sendexaVoiceCallerId || 'SENDEXA',
+                                                            type: 'tts',
                                                             message: voiceMessage,
-                                                            actionUrl: actionUrl,
-                                                            action_url: actionUrl // fallback naming
+                                                            language: voiceLanguage,
+                                                            repeat: 2
                                                         })
                                                     });
 
