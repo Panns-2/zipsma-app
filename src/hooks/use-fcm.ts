@@ -6,7 +6,7 @@ import { getToken, onMessage } from 'firebase/messaging';
 import { useToast } from './use-toast';
 
 export function useFCM(userId: string | null, schoolId: string | null) {
-    const { messaging } = useFirebase();
+    const services = useFirebase();
     const { toast } = useToast();
     const [fcmToken, setFcmToken] = useState<string | null>(null);
     const [permission, setPermission] = useState<NotificationPermission>('default');
@@ -18,7 +18,17 @@ export function useFCM(userId: string | null, schoolId: string | null) {
     }, []);
 
     const requestPermission = useCallback(async () => {
-        if (!messaging || !userId || typeof window === 'undefined') return false;
+        const messaging = services.messaging;
+        if (!userId || typeof window === 'undefined') return false;
+        
+        if (!messaging) {
+            toast({
+                title: "Not Supported",
+                description: "Push notifications are not supported in this browser or are still initializing.",
+                variant: "destructive"
+            });
+            return false;
+        }
 
         try {
             const status = await Notification.requestPermission();
@@ -37,6 +47,10 @@ export function useFCM(userId: string | null, schoolId: string | null) {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId, token, schoolId }),
                     });
+                    toast({
+                        title: "Notifications Enabled",
+                        description: "You will now receive alerts for announcements and fee updates.",
+                    });
                     return true;
                 }
             } else if (status === 'denied') {
@@ -49,11 +63,19 @@ export function useFCM(userId: string | null, schoolId: string | null) {
             }
         } catch (error) {
             console.error('An error occurred while retrieving token:', error);
+            // Reset permission state so the button reappears and the user can try again
+            setPermission('default');
+            toast({
+                title: "Error",
+                description: "There was a problem enabling notifications. Please try again.",
+                variant: "destructive"
+            });
         }
         return false;
-    }, [messaging, userId, schoolId, toast]);
+    }, [services, userId, schoolId, toast]);
 
     useEffect(() => {
+        const messaging = services.messaging;
         if (!messaging || !userId || typeof window === 'undefined') return;
 
         // Auto-initialize if already granted
@@ -89,7 +111,7 @@ export function useFCM(userId: string | null, schoolId: string | null) {
         });
 
         return () => unsubscribe();
-    }, [messaging, userId, schoolId, toast, requestPermission]);
+    }, [services, userId, schoolId, toast, requestPermission]);
 
     return { fcmToken, permission, requestPermission };
 }

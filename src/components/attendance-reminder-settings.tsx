@@ -1,11 +1,9 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -14,8 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { useFirebase } from '@/firebase/client-provider';
 import { doc, getDoc, setDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { Calendar, CheckCircle2, XCircle, Play, Info, Smartphone, Mic } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Calendar, CheckCircle2, XCircle, Play, Info, Smartphone, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
@@ -28,15 +25,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const defaultMessage = `Dear Parent, this is a friendly reminder that {name}'s outstanding balance is {balance}. Please make a payment to avoid any inconvenience. Thank you`;
+const defaultMessage = `Dear Parent, your ward {name} was marked absent today at ZipSMA. Please let us know if they are well.`;
 
-export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
+export function AttendanceReminderSettings({ schoolId }: { schoolId: string }) {
     const { db } = useFirebase();
     const { toast } = useToast();
     
     const [isEnabled, setIsEnabled] = useState(false);
-    const [selectedDays, setSelectedDays] = useState<string[]>(['monday']);
-    const [time, setTime] = useState('09:00');
+    const [selectedDays, setSelectedDays] = useState<string[]>(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+    const [time, setTime] = useState('15:00');
     const [customMessage, setCustomMessage] = useState(defaultMessage);
     
     const [isLoading, setIsLoading] = useState(true);
@@ -47,41 +44,26 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
 
     useEffect(() => {
         const fetchSettings = async () => {
-            if (!db) {
-                // If db is not ready, don't do anything yet.
-                // The effect will re-run when db becomes available.
-                return;
-            }
+            if (!db) return;
 
             setIsLoading(true);
-            const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'feeReminders');
+            const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'attendanceReminders');
 
             try {
                 const docSnap = await getDoc(settingsRef);
                 if (docSnap.exists()) {
                     const settings = docSnap.data();
                     setIsEnabled(settings.isEnabled || false);
-                    // Migrate from old frequency/day to new selectedDays array
                     if (settings.selectedDays) {
                         setSelectedDays(settings.selectedDays);
-                    } else if (settings.frequency === 'daily') {
-                        setSelectedDays(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
-                    } else if (settings.day) {
-                        setSelectedDays([settings.day]);
-                    } else {
-                        setSelectedDays(['monday']);
                     }
-                    setTime(settings.time || '09:00');
+                    setTime(settings.time || '15:00');
                     setCustomMessage(settings.message || defaultMessage);
-                } else {
-                    // If the document doesn't exist, we'll just use the default values.
-                    // No error needed.
                 }
             } catch (error) {
                 console.error("Error fetching settings: ", error);
                 toast({ title: 'Error', description: 'Could not load reminder settings.', variant: 'destructive' });
             } finally {
-                // This is now guaranteed to run.
                 setIsLoading(false);
             }
         };
@@ -90,11 +72,10 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
             if (!db) return;
             try {
                 const logsRef = collection(db, 'cron_logs');
-                // We fetch the most recent 10 logs for this school specifically.
-                // This is required to satisfy Firestore security rules.
                 const q = query(
                     logsRef, 
                     where('schoolId', 'in', [schoolId, schoolId.toUpperCase(), schoolId.toLowerCase(), 'global']),
+                    where('type', '==', 'attendance'),
                     orderBy('timestamp', 'desc'), 
                     limit(10)
                 );
@@ -109,7 +90,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
         fetchSettings();
         fetchLogs();
 
-    }, [db, toast, schoolId]); // Added schoolId to dependencies
+    }, [db, toast, schoolId]);
 
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -120,7 +101,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
         }
         
         setIsSubmitting(true);
-        const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'feeReminders');
+        const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'attendanceReminders');
         try {
             const settingsToSave = {
                 isEnabled,
@@ -131,7 +112,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
             await setDoc(settingsRef, settingsToSave, { merge: true });
             toast({
                 title: 'Settings Saved',
-                description: 'Your fees reminder settings have been updated successfully.',
+                description: 'Your attendance reminder settings have been updated successfully.',
             });
         } catch (error) {
             console.error("Error saving settings: ", error);
@@ -144,11 +125,9 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
     const handleTriggerTest = async (dryRun: boolean = true) => {
         setIsTesting(true);
         try {
-            // Use the placeholder secret for local/dev verification.
-            // In production, this should be handled more securely.
             const secret = 'CRON_SECRET';
             
-            const response = await fetch(`/api/cron?test=true&dryRun=${dryRun}&schoolId=${schoolId}&channel=sms&type=fee`, {
+            const response = await fetch(`/api/cron?test=true&dryRun=${dryRun}&schoolId=${schoolId}&type=attendance`, {
                 method: 'GET',
                 headers: {
                     'x-cron-secret': secret
@@ -167,6 +146,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                 const q = query(
                     logsRef, 
                     where('schoolId', 'in', [schoolId, schoolId.toUpperCase(), schoolId.toLowerCase(), 'global']),
+                    where('type', '==', 'attendance'),
                     orderBy('timestamp', 'desc'), 
                     limit(10)
                 );
@@ -190,8 +170,8 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-heading-lg">Fees Reminder Settings</CardTitle>
-                    <CardDescription>Configure automated SMS reminders for parents about overdue fee payments.</CardDescription>
+                    <CardTitle className="text-heading-lg">Absentee SMS Reminders</CardTitle>
+                    <CardDescription>Automatically notify parents when their child is marked absent by a specific time of day.</CardDescription>
                 </CardHeader>
                 {isLoading ? (
                      <div className="flex items-center justify-center p-8">
@@ -200,32 +180,30 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <CardContent className="space-y-6">
-                            <div className="flex flex-col gap-4">
-                                <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/30">
-                                    <div className="space-y-0.5">
-                                        <Label htmlFor="reminder-enabled" className="text-base flex items-center gap-2"><Smartphone className="w-4 h-4"/> Enable SMS Fee Reminders</Label>
-                                        <p className="text-sm text-muted-foreground">
-                                            Turn on or off the automated SMS fee reminder system.
-                                        </p>
-                                    </div>
-                                    <Switch
-                                        id="reminder-enabled"
-                                        checked={isEnabled}
-                                        onCheckedChange={setIsEnabled}
-                                        disabled={isSubmitting}
-                                    />
+                            <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/30">
+                                <div className="space-y-0.5">
+                                    <Label htmlFor="attendance-reminder-enabled" className="text-base">Enable Absentee Reminders</Label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Send automated SMS to parents of absent students.
+                                    </p>
                                 </div>
+                                <Switch
+                                    id="attendance-reminder-enabled"
+                                    checked={isEnabled}
+                                    onCheckedChange={setIsEnabled}
+                                    disabled={isSubmitting}
+                                />
                             </div>
 
                             {isEnabled && (
                                 <div className="space-y-4 pt-4 border-t">
                                     <div className="space-y-3">
-                                        <Label className="text-base">Days to Send Reminders</Label>
+                                        <Label className="text-base">Active School Days</Label>
                                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 p-4 border rounded-lg bg-background">
                                             {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
                                                 <div key={day} className="flex items-center space-x-2">
                                                     <Checkbox 
-                                                        id={`day-${day}`} 
+                                                        id={`attendance-day-${day}`} 
                                                         checked={selectedDays.includes(day)}
                                                         onCheckedChange={(checked) => {
                                                             if (checked) {
@@ -236,7 +214,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                                                         }}
                                                     />
                                                     <Label 
-                                                        htmlFor={`day-${day}`}
+                                                        htmlFor={`attendance-day-${day}`}
                                                         className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 capitalize"
                                                     >
                                                         {day.substring(0, 3)}
@@ -248,9 +226,9 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <Label htmlFor="reminder-time">Time of Day (24-hour)</Label>
+                                            <Label htmlFor="attendance-reminder-time">Time to Check Attendance (24-hour)</Label>
                                             <Input 
-                                                id="reminder-time"
+                                                id="attendance-reminder-time"
                                                 type="time"
                                                 value={time}
                                                 onChange={(e) => setTime(e.target.value)}
@@ -258,15 +236,15 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                                                 disabled={isSubmitting}
                                             />
                                             <p className="text-[10px] text-muted-foreground italic">
-                                                Tip: You can change this time as often as needed.
+                                                e.g. 15:00 for 3:00 PM. Parents will be notified if their child is absent by this time.
                                             </p>
                                         </div>
                                     </div>
 
                                     <div>
-                                        <Label htmlFor="custom-message">Custom Message Template</Label>
+                                        <Label htmlFor="attendance-custom-message">Custom Message Template</Label>
                                         <Textarea
-                                            id="custom-message"
+                                            id="attendance-custom-message"
                                             placeholder="Enter your custom message here"
                                             value={customMessage}
                                             onChange={(e) => setCustomMessage(e.target.value)}
@@ -276,7 +254,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                                         <div className="flex items-center gap-2 mt-2">
                                             <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                                             <Info className="w-3 h-3" />
-                                            Use <code className="bg-slate-100 px-1 rounded">{`{name}`}</code> for student name, <code className="bg-slate-100 px-1 rounded">{`{week}`}</code> for current week, <code className="bg-slate-100 px-1 rounded">{`{date}`}</code> for the installment deadline, <code className="bg-slate-100 px-1 rounded">{`{balance}`}</code> for amount due now, and <code className="bg-slate-100 px-1 rounded">{`{total_balance}`}</code> for full balance.
+                                            Use <code className="bg-slate-100 px-1 rounded">{`{name}`}</code> for the student's name.
                                         </p>
                                         </div>
                                     </div>
@@ -308,7 +286,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                                                 <AlertDialogHeader>
                                                     <AlertDialogTitle>Send Real SMS Reminders?</AlertDialogTitle>
                                                     <AlertDialogDescription>
-                                                        This will send ACTUAL SMS messages to all parents with outstanding balances. This action will incur costs on your Hubtel account.
+                                                        This will send ACTUAL SMS messages to all parents whose wards are currently marked absent today. This action will incur costs on your Hubtel account.
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
                                                 <AlertDialogFooter>
@@ -347,7 +325,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                             Recent Execution Logs
                         </CardTitle>
                         <CardDescription>
-                            Review the history of automated fee reminder attempts for this school.
+                            Review the history of automated attendance reminder attempts for this school.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -359,7 +337,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                             ) : (
                                 recentLogs.map((log) => {
                                     const schoolLog = log.schoolLogs?.find((s: any) => s.schoolId === schoolId.toUpperCase());
-                                    if (!schoolLog && !log.manual) return null; // Only show logs that concern this school or are global
+                                    if (!schoolLog && !log.manual) return null;
                                     
                                     const date = new Date(log.timestamp).toLocaleString();
                                     const isError = log.errors && log.errors.length > 0;

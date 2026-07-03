@@ -19,7 +19,7 @@ export default function StaffLoginPage() {
                 <div className="mb-8 text-center md:text-left">
                     <h2 className="text-2xl font-bold text-foreground">STAFF LOGIN</h2>
                     <p className="text-muted-foreground mt-2">
-                        Enter your School and Staff ID to continue.
+                        Enter your registered email and password to continue.
                     </p>
                 </div>
                 

@@ -173,7 +173,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
                 )}>
                     <div className="flex justify-between items-start">
                         <div className="space-y-1">
-                            <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+                            <DialogTitle className="text-2xl font-bold flex items-center gap-3 font-headline">
                                 {form.type === 'payment' ? <Banknote className="w-8 h-8" /> : <FilePlus className="w-8 h-8" />}
                                 {transactionToEdit ? 'Edit Transaction' : form.type === 'payment' ? 'Record Payment' : form.type === 'fee' ? 'Add Fee Charge' : 'New Transaction'}
                             </DialogTitle>

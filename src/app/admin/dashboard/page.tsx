@@ -14,7 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { LogOut, MoreHorizontal, Edit, Trash2, PlusCircle, LayoutGrid, XCircle, Wallet, Percent, FileText, Landmark, Send, UtensilsCrossed, BookCopy, Calendar as CalendarIcon, CalendarDays, Upload, Loader2, UserPlus, Search, Users, Receipt, AlertCircle as AlertCircleIcon, Banknote, CheckCheck, ShieldCheck, TrendingDown, Package, FilePlus, HandCoins, Notebook, Phone, Mail, UserCircle, Home, HeartPulse, ShieldAlert, School as SchoolIcon, Eye, EyeOff, DatabaseZap, Bus, DollarSign, Settings, Archive, ArchiveRestore, Menu, Check, ChevronsUpDown, Save, ArrowLeft, AlertTriangle, RefreshCcw, Pencil, X, ChevronDown, MessageSquare, Bell, BellOff } from 'lucide-react';
+import { LogOut, MoreHorizontal, Edit, Trash2, PlusCircle, LayoutGrid, XCircle, Wallet, Percent, FileText, Landmark, Send, UtensilsCrossed, BookCopy, Calendar as CalendarIcon, CalendarDays, Upload, Loader2, UserPlus, Search, Users, Receipt, AlertCircle as AlertCircleIcon, Banknote, CheckCheck, ShieldCheck, TrendingDown, Package, FilePlus, HandCoins, Notebook, Phone, Mail, UserCircle, Home, HeartPulse, ShieldAlert, School as SchoolIcon, Eye, EyeOff, DatabaseZap, Bus, DollarSign, Settings, Archive, ArchiveRestore, Menu, Check, ChevronsUpDown, Save, ArrowLeft, AlertTriangle, RefreshCcw, Pencil, X, ChevronDown, MessageSquare, Bell, BellOff, Mic } from 'lucide-react';
 import { ZipSMALogo } from '@/components/zipsma-logo';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +38,10 @@ import { useIdleTimeout } from '@/hooks/use-idle-timeout';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFirebase, useAuth } from '@/firebase/client-provider';
 import { FeesReminderSettings } from '@/components/fees-reminder-settings';
+import { VoiceReminderSettings } from '@/components/voice-reminder-settings';
+import { DailyFeesReminderSettings } from '@/components/daily-fees-reminder-settings';
+import { CalendarReminderSettings } from '@/components/calendar-reminder-settings';
+import { AttendanceReminderSettings } from '@/components/attendance-reminder-settings';
 import { AdminSidebar } from '@/components/admin-sidebar';
 import { AcademicReportsTab } from '@/components/admin-dashboard/academic-reports-tab';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -45,6 +49,10 @@ import { cn } from '@/lib/utils';
 import { generateReceipt } from '@/lib/receipt-utils';
 import { LedgerTable } from '@/components/admin-dashboard/ledger-table';
 import { RecordTransactionModal } from '@/components/admin-dashboard/record-transaction-modal';
+import { ParentBulkPaymentModal } from '@/components/admin-dashboard/parent-bulk-payment-modal';
+import { ParentBulkMainPaymentModal } from '@/components/admin-dashboard/parent-bulk-main-payment-modal';
+import { FamilyOverviewModal } from '@/components/admin-dashboard/family-overview-modal';
+import { User } from 'lucide-react';
 
 
 
@@ -63,6 +71,7 @@ const defaultAddStudentForm = {
     parentEmail: '',
     medicalNotes: '',
     feeDiscount: '' as any,
+    preferredVoiceLanguage: 'en-GH',
     dailyFees: [] as { categoryId: string, rate: number }[]
 };
 const defaultEditStudentForm: Omit<Student, 'dateAdded' | 'attendance' | 'isArchived' | 'feeDiscount' | 'dailyFees'> & { feeDiscount?: string | number, dailyFees?: { categoryId: string, rate: number }[] } = {
@@ -82,13 +91,14 @@ const defaultEditStudentForm: Omit<Student, 'dateAdded' | 'attendance' | 'isArch
     parentEmail: '',
     medicalNotes: '',
     feeDiscount: 0,
+    preferredVoiceLanguage: 'en-GH',
     dailyFees: []
 };
 
 const defaultPaymentForm = { amount: '', notes: '', date: new Date().toISOString().split('T')[0] };
 const defaultCommunicationForm = { recipient: 'all', subject: '', message: '', sendAsSMS: false };
 const defaultCalendarEventForm = { title: '', date: '', type: 'Event' as 'Event' | 'Holiday' | 'Exam', description: '' };
-const defaultAddStaffForm = { id: '', name: '', role: 'Teacher' as StaffRole, className: '', phone: '', email: '' };
+const defaultAddStaffForm = { id: '', name: '', role: 'Teacher' as StaffRole, className: '', phone: '', email: '', password: '' };
 
 const STAFF_ROLES: StaffRole[] = ['Teacher', 'Assistant Teacher', 'Administrator', 'Principal', 'Accountant', 'Secretary', 'Security', 'Driver', 'Cook', 'Cleaner', 'Other'];
 const defaultExpenditureForm = { description: '', category: '', amount: '', date: new Date().toISOString().split('T')[0], type: 'General' as 'General' | 'Feeding' | 'Transportation' };
@@ -106,6 +116,8 @@ const defaultSchoolSettingsForm = {
     hubtelPaymentClientId: '',
     hubtelPaymentClientSecret: '',
     hubtelMerchantNumber: '',
+    sendexaApiKey: '',
+    sendexaVoiceCallerId: '',
     settingsPin: ''
 };
 
@@ -152,6 +164,7 @@ function AdminDashboard() {
     const [debts, setDebts] = useState<Debt[]>([]);
     const [schoolDetails, setSchoolDetails] = useState<School | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [staffSearchQuery, setStaffSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isAttendanceSubmitting, setIsAttendanceSubmitting] = useState<{[key: string]: boolean}>({});
@@ -191,6 +204,7 @@ function AdminDashboard() {
     const [announcementToDelete, setAnnouncementToDelete] = useState<Announcement | null>(null);
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [feeCategories, setFeeCategories] = useState<FeeCategory[]>([]);
+    const [selectedClassForAbsent, setSelectedClassForAbsent] = useState<{ className: string, absentStudents: Student[] } | null>(null);
 
     const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
@@ -236,6 +250,10 @@ function AdminDashboard() {
     const [isBulkFeeDialogOpen, setIsBulkFeeDialogOpen] = useState(false);
     const [selectedBulkStudentIds, setSelectedBulkStudentIds] = useState<string[]>([]);
     const [isRecordTransactionModalOpen, setIsRecordTransactionModalOpen] = useState(false);
+    const [isParentBulkModalOpen, setIsParentBulkModalOpen] = useState(false);
+    const [isParentBulkMainModalOpen, setIsParentBulkMainModalOpen] = useState(false);
+    const [isFamilyOverviewModalOpen, setIsFamilyOverviewModalOpen] = useState(false);
+    const [selectedFamilyStudent, setSelectedFamilyStudent] = useState<Student | null>(null);
     const [transactionModalInitialType, setTransactionModalInitialType] = useState<'fee' | 'payment' | 'adjustment'>('payment');
     const [transactionModalInitialCategoryId, setTransactionModalInitialCategoryId] = useState<string | undefined>(undefined);
     const [transactionToEdit, setTransactionToEdit] = useState<LedgerTransaction | null>(null);
@@ -463,12 +481,9 @@ function AdminDashboard() {
                 setArchivedStudents(allStudents.filter(s => s.isArchived));
                 
                 setSelectedStudentId(prevSelectedId => {
-                    if (activeStudents.length > 0) {
+                    if (prevSelectedId && activeStudents.length > 0) {
                         const stillExists = activeStudents.some(s => s.studentId === prevSelectedId);
-                        if (prevSelectedId && stillExists) {
-                            return prevSelectedId;
-                        }
-                        return activeStudents[0].studentId;
+                        if (stillExists) return prevSelectedId;
                     }
                     return null;
                 });
@@ -508,6 +523,8 @@ function AdminDashboard() {
                     hubtelPaymentClientId: schoolData.hubtelPaymentClientId || '',
                     hubtelPaymentClientSecret: schoolData.hubtelPaymentClientSecret || '',
                     hubtelMerchantNumber: schoolData.hubtelMerchantNumber || '',
+                    sendexaApiKey: schoolData.sendexaApiKey || '',
+                    sendexaVoiceCallerId: schoolData.sendexaVoiceCallerId || '',
                     settingsPin: schoolData.settingsPin || ''
                 });
                 setLogoPreview(schoolData.logoUrl);
@@ -581,6 +598,17 @@ function AdminDashboard() {
         );
     }, [students, searchQuery]);
 
+    const filteredStaff = useMemo(() => {
+        if (!staffSearchQuery) return staffIds;
+        const query = staffSearchQuery.toLowerCase();
+        return staffIds.filter(s => 
+            s.name.toLowerCase().includes(query) ||
+            s.role.toLowerCase().includes(query) ||
+            (s.staffId && s.staffId.toLowerCase().includes(query)) ||
+            (s.email && s.email.toLowerCase().includes(query))
+        );
+    }, [staffIds, staffSearchQuery]);
+
     const selectedStudent = useMemo(() => students.find(s => s.studentId === selectedStudentId) || null, [selectedStudentId, students]);
 
     const studentsByClass = useMemo(() => {
@@ -603,13 +631,16 @@ function AdminDashboard() {
     const attendanceBreakdown = useMemo(() => {
         const today = new Date().toISOString().split('T')[0];
         return Object.entries(studentsByClass).map(([className, classStudents]) => {
-            const present = classStudents.filter(s => 
+            const presentStudents = classStudents.filter(s => 
                 s.attendance?.some(a => a.date === today && a.attended)
-            ).length;
+            );
+            const present = presentStudents.length;
+            const absentStudents = classStudents.filter(s => !presentStudents.includes(s));
             return {
                 className,
                 present,
-                total: classStudents.length
+                total: classStudents.length,
+                absentStudents
             };
         }).sort((a, b) => a.className.localeCompare(b.className));
     }, [studentsByClass]);
@@ -1139,24 +1170,44 @@ function AdminDashboard() {
     const handleAddStaff = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!schoolId) return;
+
+        if (!addStaffForm.email) {
+            toast({ title: "Error", description: "Email address is required.", variant: 'destructive' });
+            return;
+        }
+
         setIsSubmitting(true);
         try {
-            if (editingStaffId) {
-                const updates: any = {};
-                if (addStaffForm.name) updates.name = addStaffForm.name;
-                if (addStaffForm.role) updates.role = addStaffForm.role;
-                updates.className = addStaffForm.className || '';
-                updates.phone = addStaffForm.phone || '';
-                updates.email = addStaffForm.email || '';
+            const currentStaff = staffIds.find(s => s.id === editingStaffId);
+            const isLegacy = editingStaffId && currentStaff && !currentStaff.uid;
 
-                await updateStaffId(db, auth, editingStaffId, updates);
-                toast({ title: "Staff Updated", description: `${addStaffForm.name}'s details have been saved.` });
-            } else {
-                const staffId = addStaffForm.id.trim() || undefined;
-                const className = addStaffForm.className === 'none' ? undefined : addStaffForm.className;
-                await addStaffId(db, auth, schoolId, addStaffForm.name, addStaffForm.role, staffId, className, addStaffForm.phone, addStaffForm.email);
-                toast({ title: "Staff Registered", description: `${addStaffForm.name} has been added to the system.` });
+            const res = await fetch('/api/staff/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    schoolId,
+                    email: addStaffForm.email,
+                    password: addStaffForm.password || undefined,
+                    name: addStaffForm.name,
+                    role: addStaffForm.role,
+                    phone: addStaffForm.phone,
+                    className: addStaffForm.className === 'none' ? undefined : addStaffForm.className,
+                    staffId: isLegacy ? undefined : (addStaffForm.id.trim() || undefined),
+                    legacyStaffId: isLegacy ? editingStaffId : undefined,
+                    uid: editingStaffId && !isLegacy ? editingStaffId : undefined
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || "Failed to register staff member.");
             }
+
+            toast({ 
+                title: editingStaffId ? "Staff Updated" : "Staff Registered", 
+                description: `${addStaffForm.name} has been successfully ${editingStaffId ? 'updated' : 'added to the system'}.` 
+            });
+
             await fetchAdminData();
             setAddStaffForm(defaultAddStaffForm);
             setEditingStaffId(null);
@@ -1261,14 +1312,14 @@ function AdminDashboard() {
                 name, schoolPhone, schoolEmail, momoNumber, momoName, 
                 bankAccounts, hubtelSmsClientId, hubtelSmsClientSecret,
                 hubtelSenderId, hubtelPaymentClientId, hubtelPaymentClientSecret,
-                hubtelMerchantNumber, settingsPin 
+                hubtelMerchantNumber, sendexaApiKey, sendexaVoiceCallerId, settingsPin 
             } = schoolSettingsForm;
             
             await updateSchoolDetails(db, storage, auth, schoolId, { 
                 name, schoolPhone, schoolEmail, momoNumber, momoName, 
                 bankAccounts, hubtelSmsClientId, hubtelSmsClientSecret,
                 hubtelSenderId, hubtelPaymentClientId, hubtelPaymentClientSecret,
-                hubtelMerchantNumber, settingsPin 
+                hubtelMerchantNumber, sendexaApiKey, sendexaVoiceCallerId, settingsPin 
             }, logoFile);
     
             await fetchAdminData();
@@ -1527,16 +1578,48 @@ function AdminDashboard() {
             return tPeriodIndex < currentPeriodIndex && t.periodId !== selectedPeriodId;
         });
         
-        const balanceBF = prevTransactions.reduce((sum, t) => sum + (t.isVoided ? 0 : (Number(t.debit) || 0) - (Number(t.credit) || 0)), 0);
-        
+        let balanceBF = prevTransactions.reduce((sum, t) => {
+            if (t.isVoided) return sum;
+            const isAutomated = t.id && (t.id.startsWith('auto-df-') || t.id.startsWith('auto-feeding-') || t.id.startsWith('feeding-') || t.id.startsWith('mig-df-') || t.id.startsWith('mig-fa-'));
+            const debit = (isDailySubTab && isAutomated) ? 0 : (Number(t.debit) || 0);
+            return sum + debit - (Number(t.credit) || 0);
+        }, 0);
+
+        if (isDailySubTab && selectedStudent.attendance) {
+            const prevAttendance = selectedStudent.attendance.filter(a => {
+                if (!a.attended || !a.periodId || a.periodId === selectedPeriodId) return false;
+                const tPeriodIndex = sortedPeriods.findIndex(p => p.id === a.periodId);
+                return tPeriodIndex < currentPeriodIndex;
+            });
+            let prevAccrued = 0;
+            feeCategories.filter(c => c.isDaily).forEach(cat => {
+                const studentRate = (selectedStudent.dailyFees || []).find(f => f.categoryId === cat.id || f.categoryId === cat.name)?.rate || 0;
+                prevAccrued += prevAttendance.length * Number(studentRate);
+            });
+            balanceBF += prevAccrued;
+        }
+
         const currentLedger = filteredLedger.filter(t => !selectedPeriodId || t.periodId === selectedPeriodId);
 
         const totals = currentLedger.reduce((acc, t) => {
             if (t.isVoided) return acc;
-            acc.billed += (Number(t.debit) || 0);
+            const isAutomated = t.id && (t.id.startsWith('auto-df-') || t.id.startsWith('auto-feeding-') || t.id.startsWith('feeding-') || t.id.startsWith('mig-df-') || t.id.startsWith('mig-fa-'));
+            const debit = (isDailySubTab && isAutomated) ? 0 : (Number(t.debit) || 0);
+            
+            acc.billed += debit;
             acc.paid += (Number(t.credit) || 0);
             return acc;
         }, { billed: balanceBF > 0 ? balanceBF : 0, paid: balanceBF < 0 ? Math.abs(balanceBF) : 0 });
+
+        if (isDailySubTab && selectedStudent.attendance) {
+            const currentAttendance = selectedStudent.attendance.filter(a => a.attended && (!selectedPeriodId || a.periodId === selectedPeriodId));
+            let currentAccrued = 0;
+            feeCategories.filter(c => c.isDaily).forEach(cat => {
+                const studentRate = (selectedStudent.dailyFees || []).find(f => f.categoryId === cat.id || f.categoryId === cat.name)?.rate || 0;
+                currentAccrued += currentAttendance.length * Number(studentRate);
+            });
+            totals.billed += currentAccrued;
+        }
 
         const currentPeriod = academicPeriods.find(p => p.id === selectedPeriodId);
         let expected = totals.billed;
@@ -1546,7 +1629,7 @@ function AdminDashboard() {
 
         return { 
             ...totals, 
-            balance: totals.billed - totals.paid,
+            balance: isDailySubTab ? (totals.paid - totals.billed) : (totals.billed - totals.paid),
             expected,
             installmentBalance: Math.max(0, expected - totals.paid)
         };
@@ -1568,7 +1651,10 @@ function AdminDashboard() {
             return cat?.name || catRef || 'General';
         };
 
+        let totalArrears = 0;
+
         students.forEach(student => {
+            let studentArrears = 0;
             if (student.ledger) {
                 student.ledger.forEach(t => {
                     if (t.isVoided) return;
@@ -1580,8 +1666,13 @@ function AdminDashboard() {
                         
                         byCategory[displayCat].billed += (Number(t.debit) || 0);
                         byCategory[displayCat].paid += (Number(t.credit) || 0);
+                        
+                        studentArrears += ((Number(t.debit) || 0) - (Number(t.credit) || 0));
                     }
                 });
+            }
+            if (studentArrears > 0) {
+                totalArrears += studentArrears;
             }
         });
 
@@ -1595,6 +1686,7 @@ function AdminDashboard() {
             totalExpenditure,
             netSavings: totalIncome - totalExpenditure,
             totalDebt,
+            totalArrears,
         };
     }, [students, expenditures, debts, selectedPeriodId, feeCategories]);
 
@@ -1743,9 +1835,20 @@ function AdminDashboard() {
     }, [expenditures]);
 
     const incomeTotals = useMemo(() => {
-        const totals: Record<string, number> = {};
+        const totals: Record<string, number> = {
+            General: 0,
+            Feeding: 0,
+            Transportation: 0
+        };
         Object.entries(overallTotals.byCategory).forEach(([name, data]) => {
-            totals[name] = data.paid;
+            const nameLower = name.toLowerCase().trim();
+            if (nameLower.includes('feeding')) {
+                totals.Feeding = (totals.Feeding || 0) + data.paid;
+            } else if (nameLower.includes('transport') || nameLower.includes('bus') || nameLower.includes('shuttle') || nameLower.includes('vehicle')) {
+                totals.Transportation = (totals.Transportation || 0) + data.paid;
+            } else {
+                totals.General = (totals.General || 0) + data.paid;
+            }
         });
         return totals;
     }, [overallTotals]);
@@ -1781,7 +1884,6 @@ function AdminDashboard() {
         const dynamicFeedingId = dynamicFeedingCat?.id.toLowerCase().trim();
 
         students.forEach(student => {
-            if (selectedClassForFees !== 'all' && student.className !== selectedClassForFees) return;
             const processedCategoryIds = new Set<string>();
             
             const processCategory = (name: string, id: string, rate: number) => {
@@ -1821,14 +1923,18 @@ function AdminDashboard() {
                     return (!selectedPeriodId || t.periodId === selectedPeriodId) && isMatch;
                 });
 
+                const manualDebits = relevantTransactions.reduce((sum, t) => {
+                    const isAutomated = t.id && (t.id.startsWith('auto-df-') || t.id.startsWith('auto-feeding-') || t.id.startsWith('feeding-') || t.id.startsWith('mig-df-') || t.id.startsWith('mig-fa-'));
+                    return sum + (isAutomated ? 0 : (Number(t.debit) || 0));
+                }, 0);
                 const daysPresent = (student.attendance || []).filter(a => a.attended && (!selectedPeriodId || a.periodId === selectedPeriodId)).length;
-                const totalBilled = daysPresent * rate;
+                const totalBilled = (daysPresent * rate) + manualDebits;
                 const totalPaid = relevantTransactions.reduce((sum, t) => sum + (t.credit || 0), 0);
-                const balance = totalBilled - totalPaid;
+                const balance = totalPaid - totalBilled; // Wallet Balance (Positive = Credit, Negative = Arrears)
                 
                 let status: 'Paid' | 'Partially Paid' | 'Unpaid' = 'Unpaid';
-                if (balance <= 0 && totalBilled > 0) status = 'Paid';
-                else if (totalPaid > 0 && totalPaid < totalBilled) status = 'Partially Paid';
+                if (balance >= 0 && totalBilled > 0) status = 'Paid';
+                else if (totalPaid > 0 && balance < 0) status = 'Partially Paid';
                 
                 if (totalBilled > 0 || totalPaid > 0 || relevantTransactions.length > 0 || rate > 0) {
                     summary.push({
@@ -1864,6 +1970,11 @@ function AdminDashboard() {
         });
         return summary;
     }, [students, selectedPeriodId, feeCategories, selectedClassForFees]);
+
+    const filteredDailyFeeSummary = useMemo(() => {
+        if (selectedClassForFees === 'all') return dailyFeeSummary;
+        return dailyFeeSummary.filter(s => s.className === selectedClassForFees);
+    }, [dailyFeeSummary, selectedClassForFees]);
 
     const allFeeCategories = useMemo(() => {
         const combined = [...feeCategories];
@@ -2034,7 +2145,7 @@ function AdminDashboard() {
                                         </div>
                                     ) : (
                                         <>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
                                             <Card>
                                                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                                     <CardTitle className="text-heading-md">Total Students</CardTitle>
@@ -2043,6 +2154,16 @@ function AdminDashboard() {
                                                 <CardContent>
                                                     <div className="text-2xl font-bold">{students.length}</div>
                                                     <p className="text-xs text-muted-foreground">Currently enrolled</p>
+                                                </CardContent>
+                                            </Card>
+                                            <Card>
+                                                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                                    <CardTitle className="text-heading-md">Total Arrears</CardTitle>
+                                                    <AlertCircleIcon className="h-4 w-4 text-destructive" />
+                                                </CardHeader>
+                                                <CardContent>
+                                                    <div className="text-2xl font-bold text-destructive">GH¢{overallTotals.totalArrears.toFixed(2)}</div>
+                                                    <p className="text-xs text-muted-foreground">Outstanding from all students</p>
                                                 </CardContent>
                                             </Card>
                                             <Card>
@@ -2137,7 +2258,18 @@ function AdminDashboard() {
                                                             </div>
                                                         ) : (
                                                             attendanceBreakdown.map((item) => (
-                                                                <div key={item.className} className="p-4 bg-card border border-primary/5 rounded-2xl shadow-sm hover:shadow-md transition-all group hover:border-primary/20">
+                                                                <div 
+                                                                    key={item.className} 
+                                                                    className={cn(
+                                                                        "p-4 bg-card border border-primary/5 rounded-2xl shadow-sm transition-all group hover:border-primary/20",
+                                                                        item.total - item.present > 0 ? "cursor-pointer hover:shadow-md" : ""
+                                                                    )}
+                                                                    onClick={() => {
+                                                                        if (item.total - item.present > 0) {
+                                                                            setSelectedClassForAbsent({ className: item.className, absentStudents: item.absentStudents });
+                                                                        }
+                                                                    }}
+                                                                >
                                                                     <div className="flex justify-between items-start mb-3">
                                                                         <div className="flex flex-col">
                                                                             <span className="text-sm font-bold text-gray-900 group-hover:text-primary transition-colors truncate max-w-[150px]">
@@ -2174,6 +2306,30 @@ function AdminDashboard() {
                                                             ))
                                                         )}
                                                     </div>
+
+                                                    <Dialog open={!!selectedClassForAbsent} onOpenChange={(open) => !open && setSelectedClassForAbsent(null)}>
+                                                        <DialogContent className="sm:max-w-[425px]">
+                                                            <DialogHeader>
+                                                                <DialogTitle>Absent Students - {selectedClassForAbsent?.className}</DialogTitle>
+                                                                <DialogDescription>
+                                                                    The following {selectedClassForAbsent?.absentStudents.length} {selectedClassForAbsent?.absentStudents.length === 1 ? 'student is' : 'students are'} absent today.
+                                                                </DialogDescription>
+                                                            </DialogHeader>
+                                                            <ScrollArea className="max-h-[60vh]">
+                                                                <div className="space-y-4 pr-4">
+                                                                    {selectedClassForAbsent?.absentStudents.map(student => (
+                                                                        <div key={student.studentId} className="flex items-center gap-3">
+                                                                            <GradientAvatar name={student.name} size="sm" />
+                                                                            <div>
+                                                                                <p className="font-bold text-sm text-slate-800">{student.name}</p>
+                                                                                <p className="text-xs text-slate-500">{student.studentId}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </ScrollArea>
+                                                        </DialogContent>
+                                                    </Dialog>
                                                 </CardContent>
                                             </Card>
                                         </div>
@@ -2254,7 +2410,51 @@ function AdminDashboard() {
                                                     {filteredStudents.map((student) => (
                                                         <TableRow key={student.studentId}>
                                                             <TableCell>
-                                                                <GradientAvatar name={student.name} src={student.profilePicture} size="md" />
+                                                                <div className="flex items-center gap-3">
+                                                                    {(() => {
+                                                                        const pId = student.parentPhone || student.parentId || student.parentName;
+                                                                        const hasSiblings = pId ? students.filter(s => {
+                                                                            const spId = s.parentPhone || s.parentId || s.parentName;
+                                                                            return spId === pId && s.studentId !== student.studentId;
+                                                                        }).length > 0 : false;
+
+                                                                        if (hasSiblings) {
+                                                                            return (
+                                                                                <Tooltip>
+                                                                                    <TooltipTrigger asChild>
+                                                                                        <button 
+                                                                                            onClick={() => {
+                                                                                                setSelectedFamilyStudent(student);
+                                                                                                setIsFamilyOverviewModalOpen(true);
+                                                                                            }} 
+                                                                                            className="text-slate-400 hover:text-indigo-600 transition-colors"
+                                                                                        >
+                                                                                            <Users className="w-5 h-5" />
+                                                                                        </button>
+                                                                                    </TooltipTrigger>
+                                                                                    <TooltipContent><p>View Family Ledger</p></TooltipContent>
+                                                                                </Tooltip>
+                                                                            );
+                                                                        }
+                                                                        return (
+                                                                            <Tooltip>
+                                                                                <TooltipTrigger asChild>
+                                                                                    <button 
+                                                                                        onClick={() => {
+                                                                                            setSelectedFamilyStudent(student);
+                                                                                            setIsFamilyOverviewModalOpen(true);
+                                                                                        }} 
+                                                                                        className="text-slate-400 hover:text-indigo-600 transition-colors"
+                                                                                    >
+                                                                                        <User className="w-5 h-5" />
+                                                                                    </button>
+                                                                                </TooltipTrigger>
+                                                                                <TooltipContent><p>View Quick Ledger</p></TooltipContent>
+                                                                            </Tooltip>
+                                                                        );
+                                                                    })()}
+                                                                    <GradientAvatar name={student.name} src={student.profilePicture} size="md" />
+                                                                </div>
                                                             </TableCell>
                                                             <TableCell>
                                                                 <Tooltip>
@@ -2591,13 +2791,33 @@ function AdminDashboard() {
                                         </div>
                                         <div className="flex flex-col">
                                             <h2 className="text-xl font-bold text-primary leading-tight">
-                                                {feesActiveSubTab === 'daily' ? 'Daily Fee Category' : 'Main School Fees'}
+                                                {feesActiveSubTab === 'daily' 
+                                                    ? (selectedStudent ? 'Daily Collection History' : 'Daily Collections') 
+                                                    : 'Main School Fees'}
                                             </h2>
                                             <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Fees Management</p>
                                         </div>
                                     </div>
 
                                     <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+                                        {feesActiveSubTab === 'daily' && (
+                                            <Button
+                                                onClick={() => setIsParentBulkModalOpen(true)}
+                                                className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg flex items-center gap-2 transition-all"
+                                            >
+                                                <Users className="w-4 h-4" />
+                                                Parent Pay
+                                            </Button>
+                                        )}
+                                        {feesActiveSubTab === 'main' && (
+                                            <Button
+                                                onClick={() => setIsParentBulkMainModalOpen(true)}
+                                                className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg flex items-center gap-2 transition-all"
+                                            >
+                                                <Users className="w-4 h-4" />
+                                                Parent Pay
+                                            </Button>
+                                        )}
                                         <Select value={selectedClassForFees} onValueChange={(val) => {
                                             setSelectedClassForFees(val);
                                             setSelectedStudentId(null);
@@ -2630,17 +2850,7 @@ function AdminDashboard() {
                                                         className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center gap-2 group transition-all"
                                                     >
                                                         <CalendarIcon className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                                        Daily Fee Management
-                                                    </Button>
-                                                )}
-                                                {feesActiveSubTab === 'daily' && (
-                                                    <Button
-                                                        onClick={() => setFeesActiveSubTab('main')}
-                                                        variant="outline"
-                                                        className="h-10 px-4 rounded-xl border-primary/20 text-primary font-bold text-xs flex items-center gap-2 transition-all hover:bg-primary/5"
-                                                    >
-                                                        <ArrowLeft className="w-4 h-4" />
-                                                        Back to Main Fees
+                                                        Daily Collections
                                                     </Button>
                                                 )}
                                             </>
@@ -2916,35 +3126,38 @@ function AdminDashboard() {
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                     <div className="flex items-center justify-between p-5 bg-blue-50/50 border-4 border-blue-500 rounded-2xl shadow-md transition-all hover:shadow-lg">
                                                         <div>
-                                                            <p className="text-label-caps text-blue-600/80 mb-0.5">Daily Fees</p>
+                                                            <p className="text-label-caps text-blue-600/80 mb-0.5">Total Spent (Attendance)</p>
                                                             <p className="text-xl font-bold text-blue-900 text-numeric">GH¢{(ledgerTotals.billed || 0).toFixed(2)}</p>
                                                         </div>
                                                         <TrendingDown className="w-8 h-8 text-blue-500/30" />
                                                     </div>
                                                     <div className="flex items-center justify-between p-5 bg-emerald-50/50 border-4 border-emerald-500 rounded-2xl shadow-md transition-all hover:shadow-lg">
                                                         <div>
-                                                            <p className="text-label-caps text-emerald-600/80 mb-0.5">Total Paid</p>
+                                                            <p className="text-label-caps text-emerald-600/80 mb-0.5">Total Top-ups</p>
                                                             <p className="text-xl font-bold text-emerald-900 text-numeric">GH¢{(ledgerTotals.paid || 0).toFixed(2)}</p>
                                                         </div>
                                                         <Banknote className="w-8 h-8 text-emerald-500/30" />
                                                     </div>
                                                     <div className={cn(
                                                         "flex items-center justify-between p-5 border-4 rounded-2xl shadow-md transition-all hover:shadow-lg",
-                                                        ledgerTotals.balance > 0 ? "bg-red-50 border-red-500" : "bg-emerald-50 border-emerald-500"
+                                                        ledgerTotals.balance < 0 ? "bg-red-50 border-red-500" : "bg-emerald-50 border-emerald-500"
                                                     )}>
                                                         <div>
                                                             <p className={cn(
                                                                 "text-[10px] font-black uppercase tracking-widest mb-0.5",
-                                                                ledgerTotals.balance > 0 ? "text-red-600/80" : "text-emerald-600/80"
-                                                            )}>Total Balance</p>
+                                                                ledgerTotals.balance < 0 ? "text-red-600/80" : "text-emerald-600/80"
+                                                            )}>Wallet Balance</p>
                                                             <p className={cn(
                                                                 "text-xl font-bold text-numeric",
-                                                                ledgerTotals.balance > 0 ? "text-red-900" : "text-emerald-900"
+                                                                ledgerTotals.balance < 0 ? "text-red-900" : "text-emerald-900"
                                                             )}>GH¢{(ledgerTotals.balance || 0).toFixed(2)}</p>
+                                                            <p className="text-[10px] font-bold opacity-70">
+                                                                {ledgerTotals.balance >= 0 ? "Prepaid Credit" : "Outstanding Arrears"}
+                                                            </p>
                                                         </div>
                                                         <Wallet className={cn(
                                                             "w-8 h-8",
-                                                            ledgerTotals.balance > 0 ? "text-red-500/30" : "text-emerald-500/30"
+                                                            ledgerTotals.balance < 0 ? "text-red-500/30" : "text-emerald-500/30"
                                                         )} />
                                                     </div>
                                                 </div>
@@ -2958,11 +3171,8 @@ function AdminDashboard() {
                                                                 onClick={() => setSelectedStudentId(null)}
                                                                 className="h-8 px-2 text-primary font-bold hover:bg-primary/5"
                                                             >
-                                                                <ArrowLeft className="w-4 h-4 mr-1.5" /> Back to Summary
+                                                                <ArrowLeft className="w-4 h-4 mr-1.5" /> Back to Daily Collections
                                                             </Button>
-                                                            <h3 className="text-label-caps">
-                                                                <FileText className="w-4 h-4" /> Daily Fee History
-                                                            </h3>
                                                         </div>
                                                     </div>
                                                     
@@ -2980,11 +3190,85 @@ function AdminDashboard() {
                                                             return tPeriodIndex < currentPeriodIndex && t.periodId !== selectedPeriodId;
                                                         });
                                                         
-                                                        const balanceBF = prevTransactions.reduce((sum, t) => sum + (t.isVoided ? 0 : (Number(t.debit) || 0) - (Number(t.credit) || 0)), 0);
+                                                        let balanceBF = prevTransactions.reduce((sum, t) => {
+                                                            if (t.isVoided) return sum;
+                                                            const isAutomated = t.id && (t.id.startsWith('auto-df-') || t.id.startsWith('auto-feeding-') || t.id.startsWith('feeding-') || t.id.startsWith('mig-df-') || t.id.startsWith('mig-fa-'));
+                                                            return sum + (isAutomated ? 0 : (Number(t.debit) || 0)) - (Number(t.credit) || 0);
+                                                        }, 0);
+
+                                                        const prevAttendance = (selectedStudent.attendance || []).filter(a => {
+                                                            if (!a.attended || !a.periodId || a.periodId === selectedPeriodId) return false;
+                                                            const tPeriodIndex = sortedPeriods.findIndex(p => p.id === a.periodId);
+                                                            return tPeriodIndex < currentPeriodIndex;
+                                                        });
+                                                        let prevAccruedInfo = 0;
+                                                        allFeeCategories.filter(c => c.isDaily).forEach(cat => {
+                                                            const studentRate = (selectedStudent.dailyFees || []).find(f => f.categoryId === cat.id || f.categoryId === cat.name)?.rate || 0;
+                                                            prevAccruedInfo += prevAttendance.length * Number(studentRate);
+                                                        });
+                                                        balanceBF += prevAccruedInfo;
+
                                                         const currentLedger = filteredLedger.filter(t => !selectedPeriodId || t.periodId === selectedPeriodId);
                                                         
-                                                        const displayLedger = balanceBF !== 0 ? [
-                                                            {
+                                                        // Calculate attendance-based charges from dailyFeeSummary
+                                                        const relevantSummaries = dailyFeeSummary.filter(s => s.studentId === (selectedStudent.id || selectedStudent.studentId));
+                                                        const totalAttendanceCharges = relevantSummaries.reduce((sum, s) => sum + s.totalBilled, 0);
+                                                        
+                                                        // Calculate total wallet balance (Net of all history including current period)
+                                                        const allPayments = filteredLedger.reduce((sum, t) => sum + (t.isVoided ? 0 : (Number(t.credit) || 0)), 0);
+                                                        const allCharges = filteredLedger.reduce((sum, t) => {
+                                                            if (t.isVoided) return sum;
+                                                            const isAutomated = t.id && (t.id.startsWith('auto-df-') || t.id.startsWith('auto-feeding-') || t.id.startsWith('feeding-') || t.id.startsWith('mig-df-') || t.id.startsWith('mig-fa-'));
+                                                            return sum + (isAutomated ? 0 : (Number(t.debit) || 0));
+                                                        }, 0);
+                                                        const walletBalance = allPayments - (allCharges + totalAttendanceCharges);
+
+                                                        // Calculate summary totals for daily categories (Includes both ledger and attendance)
+                                                        const summaryTotals = { ...relevantSummaries.reduce((acc, s) => {
+                                                            acc[s.categoryName] = (acc[s.categoryName] || 0) + s.totalBilled;
+                                                            return acc;
+                                                        }, {} as Record<string, number>) };
+                                                        
+                                                        currentLedger.forEach(t => {
+                                                            const isAutomated = t.id && (t.id.startsWith('auto-df-') || t.id.startsWith('auto-feeding-') || t.id.startsWith('feeding-') || t.id.startsWith('mig-df-') || t.id.startsWith('mig-fa-'));
+                                                            if (t.isVoided || isAutomated || (Number(t.debit) || 0) <= 0) return;
+                                                            const catId = t.categoryId || t.category;
+                                                            const catObj = allFeeCategories.find(c => c.id === catId || c.name === catId);
+                                                            const catName = catObj ? catObj.name : (t.category || 'Other');
+                                                            summaryTotals[catName] = (summaryTotals[catName] || 0) + (Number(t.debit) || 0);
+                                                        });
+
+                                                        const cleanedCurrentLedger = currentLedger.filter(t => {
+                                                            const isAutomated = t.id && (t.id.startsWith('auto-df-') || t.id.startsWith('auto-feeding-') || t.id.startsWith('feeding-') || t.id.startsWith('mig-df-') || t.id.startsWith('mig-fa-'));
+                                                            return !isAutomated;
+                                                        });
+
+                                                        const currentAttendance = (selectedStudent.attendance || []).filter(a => {
+                                                            return a.attended && (!selectedPeriodId || a.periodId === selectedPeriodId);
+                                                        });
+                                                        
+                                                        const attendanceLedgerRows: any[] = [];
+                                                        currentAttendance.forEach(a => {
+                                                            allFeeCategories.filter(c => c.isDaily).forEach(cat => {
+                                                                const studentRate = (selectedStudent.dailyFees || []).find(f => f.categoryId === cat.id || f.categoryId === cat.name)?.rate || 0;
+                                                                if (Number(studentRate) > 0) {
+                                                                    attendanceLedgerRows.push({
+                                                                        id: `auto-att-${a.id || a.date}-${cat.id}`,
+                                                                        date: a.date,
+                                                                        description: `Daily Rate (${cat.name})`,
+                                                                        category: cat.id,
+                                                                        debit: Number(studentRate),
+                                                                        credit: 0,
+                                                                        isVoided: false,
+                                                                        type: 'charge',
+                                                                        isDaily: true
+                                                                    });
+                                                                }
+                                                            });
+                                                        });
+
+                                                        const displayLedger = [
+                                                            ...(balanceBF !== 0 ? [{
                                                                 id: 'BF',
                                                                 date: 'Opening',
                                                                 description: 'Balance Brought Forward (Daily Fees)',
@@ -2993,24 +3277,29 @@ function AdminDashboard() {
                                                                 credit: balanceBF < 0 ? Math.abs(balanceBF) : 0,
                                                                 isVoided: false,
                                                                 type: 'adjustment'
-                                                            } as any,
-                                                            ...currentLedger
-                                                        ] : currentLedger;
+                                                            }] : []),
+                                                            ...cleanedCurrentLedger,
+                                                            ...attendanceLedgerRows
+                                                        ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) as any[];
 
                                                         return (
-                                                            <LedgerTable 
-                                                                ledger={displayLedger} 
-                                                                onVoid={(id) => {
-                                                                    if (id === 'BF') return;
-                                                                    handleVoidTransaction(id);
-                                                                }}
-                                                                onEdit={handleOpenEditTransaction}
-                                                                generateReceipt={generateReceipt}
-                                                                schoolDetails={schoolDetails}
-                                                                student={selectedStudent}
-                                                                academicPeriods={academicPeriods}
-                                                                feeCategories={allFeeCategories}
-                                                            />
+                                                            <div className="space-y-6">
+
+                                                                <LedgerTable 
+                                                                    ledger={displayLedger} 
+                                                                    onVoid={(id) => {
+                                                                        if (id === 'BF') return;
+                                                                        handleVoidTransaction(id);
+                                                                    }}
+                                                                    onEdit={handleOpenEditTransaction}
+                                                                    generateReceipt={generateReceipt}
+                                                                    schoolDetails={schoolDetails}
+                                                                    student={selectedStudent}
+                                                                    academicPeriods={academicPeriods}
+                                                                    feeCategories={allFeeCategories}
+                                                                    hideDailyAmounts={true}
+                                                                />
+                                                            </div>
                                                         );
                                                     })()}
                                                 </div>
@@ -3022,7 +3311,7 @@ function AdminDashboard() {
                                                     <div>
                                                         <CardTitle className="text-heading-lg flex items-center gap-2">
                                                             <UtensilsCrossed className="w-6 h-6 text-primary" />
-                                                            Daily Fee Management
+                                                            Daily Collections
                                                         </CardTitle>
                                                         <CardDescription className="font-medium">Track accumulated fees and record payments in bulk for selected records.</CardDescription>
                                                     </div>
@@ -3084,7 +3373,7 @@ function AdminDashboard() {
                                                         </TooltipProvider>
                                                         
                                                         <Badge variant="outline" className="bg-white font-black text-xs px-3 py-1.5 border-2 text-primary border-primary/20">
-                                                            {dailyFeeSummary.length} Records
+                                                            {filteredDailyFeeSummary.length} Records
                                                         </Badge>
                                                     </div>
                                                 </div>
@@ -3094,25 +3383,11 @@ function AdminDashboard() {
                                                     <Table>
                                                         <TableHeader className="bg-muted/30">
                                                             <TableRow>
-                                                                <TableHead className="w-[50px] pl-6">
-                                                                    <Checkbox 
-                                                                        checked={(() => {
-                                                                            const selectableRows = dailyFeeSummary.filter(row => {
-                                                                                const student = students.find(s => s.studentId === row.studentId);
-                                                                                const isAlreadyPaid = student?.ledger?.some(t => 
-                                                                                    !t.isVoided && 
-                                                                                    t.date === selectedPaymentDate && 
-                                                                                    (t.categoryId === row.categoryId || t.category === row.categoryId || t.category === row.categoryName) &&
-                                                                                    (t.credit || 0) > 0
-                                                                                );
-                                                                                const isPresent = student?.attendance?.some(a => a.date === selectedPaymentDate && a.attended);
-                                                                                return !isAlreadyPaid && isPresent;
-                                                                            });
-                                                                            return selectableRows.length > 0 && selectableRows.every(row => bulkDailyPaymentsSelection[`${row.studentId}|${row.categoryId}`]);
-                                                                        })()}
-                                                                            onCheckedChange={(checked) => {
-                                                                                const newSelection = { ...bulkDailyPaymentsSelection };
-                                                                                dailyFeeSummary.forEach(row => {
+                                                                <TableHead className="w-[100px] pl-6">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Checkbox 
+                                                                            checked={(() => {
+                                                                                const selectableRows = filteredDailyFeeSummary.filter(row => {
                                                                                     const student = students.find(s => s.studentId === row.studentId);
                                                                                     const isAlreadyPaid = student?.ledger?.some(t => 
                                                                                         !t.isVoided && 
@@ -3121,25 +3396,74 @@ function AdminDashboard() {
                                                                                         (t.credit || 0) > 0
                                                                                     );
                                                                                     const isPresent = student?.attendance?.some(a => a.date === selectedPaymentDate && a.attended);
-
-                                                                                    if (!isAlreadyPaid && isPresent) {
-                                                                                        newSelection[`${row.studentId}|${row.categoryId}`] = !!checked;
-                                                                                    }
+                                                                                    return !isAlreadyPaid && isPresent;
                                                                                 });
-                                                                                setBulkDailyPaymentsSelection(newSelection);
-                                                                            }}
-                                                                        className="border-primary/30 data-[state=checked]:bg-primary"
-                                                                    />
+                                                                                return selectableRows.length > 0 && selectableRows.every(row => bulkDailyPaymentsSelection[`${row.studentId}|${row.categoryId}`]);
+                                                                            })()}
+                                                                                onCheckedChange={(checked) => {
+                                                                                    const newSelection = { ...bulkDailyPaymentsSelection };
+                                                                                    filteredDailyFeeSummary.forEach(row => {
+                                                                                        const student = students.find(s => s.studentId === row.studentId);
+                                                                                        const isAlreadyPaid = student?.ledger?.some(t => 
+                                                                                            !t.isVoided && 
+                                                                                            t.date === selectedPaymentDate && 
+                                                                                            (t.categoryId === row.categoryId || t.category === row.categoryId || t.category === row.categoryName) &&
+                                                                                            (t.credit || 0) > 0
+                                                                                        );
+                                                                                        const isPresent = student?.attendance?.some(a => a.date === selectedPaymentDate && a.attended);
+
+                                                                                        if (!isAlreadyPaid && isPresent) {
+                                                                                            newSelection[`${row.studentId}|${row.categoryId}`] = !!checked;
+                                                                                        }
+                                                                                    });
+                                                                                    setBulkDailyPaymentsSelection(newSelection);
+                                                                                }}
+                                                                            className="border-primary/30 data-[state=checked]:bg-primary"
+                                                                        />
+                                                                        <span className="font-bold text-primary uppercase text-[10px] tracking-widest cursor-pointer" onClick={() => {
+                                                                            const isAllSelected = (() => {
+                                                                                const selectableRows = filteredDailyFeeSummary.filter(row => {
+                                                                                    const student = students.find(s => s.studentId === row.studentId);
+                                                                                    const isAlreadyPaid = student?.ledger?.some(t => 
+                                                                                        !t.isVoided && 
+                                                                                        t.date === selectedPaymentDate && 
+                                                                                        (t.categoryId === row.categoryId || t.category === row.categoryId || t.category === row.categoryName) &&
+                                                                                        (t.credit || 0) > 0
+                                                                                    );
+                                                                                    const isPresent = student?.attendance?.some(a => a.date === selectedPaymentDate && a.attended);
+                                                                                    return !isAlreadyPaid && isPresent;
+                                                                                });
+                                                                                return selectableRows.length > 0 && selectableRows.every(row => bulkDailyPaymentsSelection[`${row.studentId}|${row.categoryId}`]);
+                                                                            })();
+                                                                            
+                                                                            const newSelection = { ...bulkDailyPaymentsSelection };
+                                                                            filteredDailyFeeSummary.forEach(row => {
+                                                                                const student = students.find(s => s.studentId === row.studentId);
+                                                                                const isAlreadyPaid = student?.ledger?.some(t => 
+                                                                                    !t.isVoided && 
+                                                                                    t.date === selectedPaymentDate && 
+                                                                                    (t.categoryId === row.categoryId || t.category === row.categoryId || t.category === row.categoryName) &&
+                                                                                    (t.credit || 0) > 0
+                                                                                );
+                                                                                const isPresent = student?.attendance?.some(a => a.date === selectedPaymentDate && a.attended);
+
+                                                                                if (!isAlreadyPaid && isPresent) {
+                                                                                    newSelection[`${row.studentId}|${row.categoryId}`] = !isAllSelected;
+                                                                                }
+                                                                            });
+                                                                            setBulkDailyPaymentsSelection(newSelection);
+                                                                        }}>ALL</span>
+                                                                    </div>
                                                                 </TableHead>
                                                                 <TableHead className="font-bold text-primary uppercase text-[10px] tracking-widest">Student Name</TableHead>
                                                                 <TableHead className="font-bold text-primary uppercase text-[10px] tracking-widest">Status</TableHead>
-                                                                <TableHead className="text-right font-bold text-primary uppercase text-[10px] tracking-widest">Balance</TableHead>
+                                                                <TableHead className="font-bold text-primary uppercase text-[10px] tracking-widest text-right">Credit Balance</TableHead>
                                                                 <TableHead className="text-right font-bold text-primary uppercase text-[10px] tracking-widest pr-6">Actions</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
                                                         <TableBody>
-                                                            {dailyFeeSummary.length > 0 ? (
-                                                                dailyFeeSummary.map((row, idx) => {
+                                                            {filteredDailyFeeSummary.length > 0 ? (
+                                                                filteredDailyFeeSummary.map((row, idx) => {
                                                                     const selectionKey = `${row.studentId}|${row.categoryId}`;
                                                                     const isSelected = !!bulkDailyPaymentsSelection[selectionKey];
                                                                     
@@ -3218,7 +3542,7 @@ function AdminDashboard() {
                                                                                     {row.status}
                                                                                 </Badge>
                                                                             </TableCell>
-                                                                            <TableCell className={`text-right font-black text-sm text-numeric ${row.balance <= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                                                                            <TableCell className={`text-right font-black text-sm text-numeric ${row.balance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
                                                                                 GH¢{row.balance.toFixed(2)}
                                                                             </TableCell>
                                                                             <TableCell className="text-right pr-6">
@@ -3237,9 +3561,9 @@ function AdminDashboard() {
                                                                                                     <span className="text-xs font-bold text-right">GH¢{row.dailyRate.toFixed(2)}</span>
                                                                                                     <span className="text-xs text-muted-foreground font-medium">Days Present:</span>
                                                                                                     <span className="text-xs font-bold text-right">{row.daysPresent} days</span>
-                                                                                                    <span className="text-xs text-muted-foreground font-medium">Total Accrued:</span>
-                                                                                                    <span className="text-xs font-bold text-right">GH¢{row.totalBilled.toFixed(2)}</span>
-                                                                                                    <span className="text-xs text-muted-foreground font-medium">Total Paid:</span>
+                                                                                                    <span className="text-xs text-muted-foreground font-medium">Total Spent:</span>
+                                                                                                    <span className="text-xs font-bold text-right text-rose-600">GH¢{row.totalBilled.toFixed(2)}</span>
+                                                                                                    <span className="text-xs text-muted-foreground font-medium">Total Top-ups:</span>
                                                                                                     <span className="text-xs font-bold text-right text-emerald-600">GH¢{row.totalPaid.toFixed(2)}</span>
                                                                                                 </div>
                                                                                             </div>
@@ -3713,7 +4037,11 @@ function AdminDashboard() {
                                                 </div>
                                                 <div className="space-y-2">
                                                     <Label htmlFor="add-staff-email" className="text-xs font-bold uppercase">Email Address</Label>
-                                                    <Input id="add-staff-email" type="email" placeholder="staff@example.com" className="border-2" value={addStaffForm.email} onChange={e => setAddStaffForm({ ...addStaffForm, email: e.target.value })} disabled={isSubmitting}/>
+                                                    <Input id="add-staff-email" type="email" placeholder="staff@example.com" className="border-2" value={addStaffForm.email} onChange={e => setAddStaffForm({ ...addStaffForm, email: e.target.value })} required disabled={isSubmitting}/>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="add-staff-password" className="text-xs font-bold uppercase">Password {editingStaffId ? '(Leave blank to keep current)' : ''}</Label>
+                                                    <Input id="add-staff-password" type="password" placeholder={editingStaffId ? "••••••••" : "Min 6 characters"} className="border-2" value={addStaffForm.password || ''} onChange={e => setAddStaffForm({ ...addStaffForm, password: e.target.value })} required={!editingStaffId} disabled={isSubmitting}/>
                                                 </div>
                                             </CardContent>
                                             <CardFooter className="flex gap-2">
@@ -3723,7 +4051,7 @@ function AdminDashboard() {
                                                 {editingStaffId && (
                                                     <Button type="button" variant="outline" className="h-12" onClick={() => {
                                                         setEditingStaffId(null);
-                                                        setAddStaffForm({ name: '', role: 'Teacher', id: '', className: '', phone: '', email: '' });
+                                                        setAddStaffForm({ name: '', role: 'Teacher', id: '', className: '', phone: '', email: '', password: '' });
                                                     }}>Cancel</Button>
                                                 )}
                                             </CardFooter>
@@ -3738,7 +4066,12 @@ function AdminDashboard() {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <Search className="w-4 h-4 text-muted-foreground" />
-                                                <Input placeholder="Search staff..." className="w-48 h-8 text-sm" />
+                                                <Input 
+                                                    placeholder="Search staff..." 
+                                                    className="w-48 h-8 text-sm" 
+                                                    value={staffSearchQuery}
+                                                    onChange={(e) => setStaffSearchQuery(e.target.value)}
+                                                />
                                             </div>
                                         </CardHeader>
                                         <CardContent>
@@ -3754,10 +4087,10 @@ function AdminDashboard() {
                                                         </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
-                                                        {staffIds.length === 0 ? (
+                                                        {filteredStaff.length === 0 ? (
                                                             <TableRow><TableCell colSpan={5} className="h-48 text-center text-muted-foreground italic">No staff found.</TableCell></TableRow>
                                                         ) : (
-                                                            staffIds.map((staff) => {
+                                                            filteredStaff.map((staff) => {
                                                             const details = staffDetails.find(d => d.id === staff.id);
                                                             return (
                                                                 <TableRow key={staff.id} className="hover:bg-muted/30">
@@ -3766,7 +4099,7 @@ function AdminDashboard() {
                                                                             <GradientAvatar name={staff.name} size="sm" />
                                                                             <div>
                                                                                 <p className="font-bold text-sm leading-none">{staff.name}</p>
-                                                                                <p className="text-[10px] text-muted-foreground text-numeric mt-1">{staff.id}</p>
+                                                                                <p className="text-[10px] text-muted-foreground text-numeric mt-1">{staff.uid ? (staff.staffId || 'N/A') : staff.id}</p>
                                                                             </div>
                                                                         </div>
                                                                     </TableCell>
@@ -3814,10 +4147,11 @@ function AdminDashboard() {
                                                                                     setAddStaffForm({
                                                                                         name: staff.name || '',
                                                                                         role: staff.role || 'Teacher',
-                                                                                        id: staff.id,
+                                                                                        id: staff.uid ? (staff.staffId || '') : staff.id,
                                                                                         className: staff.className || '',
                                                                                         phone: staff.phone || '',
-                                                                                        email: staff.email || ''
+                                                                                        email: staff.email || '',
+                                                                                        password: ''
                                                                                     });
                                                                                 }}><Edit className="mr-2 h-4 w-4" /> Edit Details</DropdownMenuItem>
                                                                                 <DropdownMenuItem onClick={() => handleOpenSalaryDialog(staff)}><DollarSign className="mr-2 h-4 w-4" /> Set Salary</DropdownMenuItem>
@@ -4177,6 +4511,40 @@ function AdminDashboard() {
                                     </CardContent>
                                 </Card>
 
+                                <Card className="mb-8 border-violet-200 bg-violet-50/30">
+                                    <CardHeader>
+                                        <CardTitle className="text-heading-md flex items-center gap-2 text-violet-800"><Mic className="w-6 h-6"/> Sendexa Voice Call Settings</CardTitle>
+                                        <CardDescription>Configure credentials for Automated Text-to-Speech Voice Calls via Sendexa.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-6">
+                                          <div className="space-y-4">
+                                              <div className="space-y-2">
+                                                  <Label htmlFor="sendexaApiKey">Sendexa API Key</Label>
+                                                  <div className="relative">
+                                                      <Input 
+                                                          id="sendexaApiKey" 
+                                                          type="password"
+                                                          placeholder="From Sendexa Dashboard" 
+                                                          value={schoolSettingsForm.sendexaApiKey || ''} 
+                                                          onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, sendexaApiKey: e.target.value })} 
+                                                          disabled={isSubmitting} 
+                                                      />
+                                                  </div>
+                                              </div>
+                                              <div className="space-y-2">
+                                                  <Label htmlFor="sendexaVoiceCallerId">Caller ID (Sender Name / Phone)</Label>
+                                                  <Input 
+                                                      id="sendexaVoiceCallerId" 
+                                                      placeholder="e.g. SENDEXA or +233..." 
+                                                      value={schoolSettingsForm.sendexaVoiceCallerId || ''} 
+                                                      onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, sendexaVoiceCallerId: e.target.value })} 
+                                                      disabled={isSubmitting} 
+                                                  />
+                                              </div>
+                                          </div>
+                                    </CardContent>
+                                </Card>
+
                                 <Card className="mb-8 border-indigo-200 bg-indigo-50/30">
                                     <CardHeader>
                                         <CardTitle className="text-heading-md flex items-center gap-2 text-indigo-800"><Wallet className="w-6 h-6"/> Hubtel Payment Gateway Settings</CardTitle>
@@ -4299,6 +4667,22 @@ function AdminDashboard() {
 
                                 <div className="mt-8">
                                     <FeesReminderSettings schoolId={schoolId || ''} />
+                                </div>
+
+                                <div className="mt-8">
+                                    <VoiceReminderSettings schoolId={schoolId || ''} />
+                                </div>
+
+                                <div className="mt-8">
+                                    <DailyFeesReminderSettings schoolId={schoolId || ''} />
+                                </div>
+
+                                <div className="mt-8">
+                                    <AttendanceReminderSettings schoolId={schoolId || ''} />
+                                </div>
+
+                                <div className="mt-8">
+                                    <CalendarReminderSettings schoolId={schoolId || ''} />
                                 </div>
 
                                 <Card className="mt-8 border-2 shadow-lg overflow-hidden group">
@@ -4463,6 +4847,18 @@ function AdminDashboard() {
                     </main>
                 </div>
 
+                <FamilyOverviewModal
+                    isOpen={isFamilyOverviewModalOpen}
+                    onClose={() => {
+                        setIsFamilyOverviewModalOpen(false);
+                        setSelectedFamilyStudent(null);
+                    }}
+                    parentStudent={selectedFamilyStudent}
+                    students={students}
+                    feeCategories={feeCategories}
+                    currentPeriod={academicPeriods.find(p => p.id === selectedPeriodId) || academicPeriods.find(p => p.isCurrent)}
+                />
+
                 <Dialog open={isSettingsAuthOpen} onOpenChange={setIsSettingsAuthOpen}>
                     <DialogContent className="max-w-sm">
                         <DialogHeader>
@@ -4605,6 +5001,19 @@ function AdminDashboard() {
                                     <div className="space-y-2"><Label htmlFor="add-emergencyPhone">Emergency Contact Phone</Label><Input id="add-emergencyPhone" type="tel" value={addStudentForm.emergencyContactPhone} onChange={(e) => setAddStudentForm({...addStudentForm, emergencyContactPhone: e.target.value})} placeholder="e.g. 0200123456" required disabled={isSubmitting} /></div>
                                     <div className="space-y-2"><Label htmlFor="add-medical">Medical Notes (Allergies, etc.)</Label><Textarea id="add-medical" value={addStudentForm.medicalNotes} onChange={(e) => setAddStudentForm({...addStudentForm, medicalNotes: e.target.value})} placeholder="e.g. Allergic to peanuts" disabled={isSubmitting}/></div>
                                     <div className="space-y-2">
+                                        <Label htmlFor="add-voiceLanguage">Voice Reminder Language</Label>
+                                        <Select value={addStudentForm.preferredVoiceLanguage} onValueChange={(value) => setAddStudentForm({...addStudentForm, preferredVoiceLanguage: value})} disabled={isSubmitting}>
+                                            <SelectTrigger id="add-voiceLanguage">
+                                                <SelectValue placeholder="Select Language" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="en-GH">English</SelectItem>
+                                                <SelectItem value="tw">Twi</SelectItem>
+                                                <SelectItem value="ha">Hausa</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
                                         <Label htmlFor="add-discount" className="text-primary font-bold">Fee Discount (%)</Label>
                                         <Input 
                                             id="add-discount" 
@@ -4690,6 +5099,19 @@ function AdminDashboard() {
                                  <div className="space-y-2"><Label htmlFor="edit-emergencyPhone">Emergency Contact Phone</Label><Input id="edit-emergencyPhone" type="tel" value={editStudentForm.emergencyContactPhone} onChange={(e) => setEditStudentForm({...editStudentForm, emergencyContactPhone: e.target.value})} required disabled={isSubmitting} /></div>
 
                                  <div className="space-y-2 md:col-span-2"><Label htmlFor="edit-medical">Medical Notes</Label><Textarea id="edit-medical" value={editStudentForm.medicalNotes} onChange={(e) => setEditStudentForm({...editStudentForm, medicalNotes: e.target.value})} disabled={isSubmitting}/></div>
+                                 <div className="space-y-2">
+                                     <Label htmlFor="edit-voiceLanguage">Voice Reminder Language</Label>
+                                     <Select value={editStudentForm.preferredVoiceLanguage || 'en-GH'} onValueChange={(value) => setEditStudentForm({...editStudentForm, preferredVoiceLanguage: value})} disabled={isSubmitting}>
+                                         <SelectTrigger id="edit-voiceLanguage">
+                                             <SelectValue placeholder="Select Language" />
+                                         </SelectTrigger>
+                                         <SelectContent>
+                                             <SelectItem value="en-GH">English</SelectItem>
+                                             <SelectItem value="tw">Twi</SelectItem>
+                                             <SelectItem value="ha">Hausa</SelectItem>
+                                         </SelectContent>
+                                     </Select>
+                                 </div>
                                  <div className="space-y-2 md:col-span-2">
                                     <Label htmlFor="edit-discount" className="text-primary font-bold">Fee Discount (%)</Label>
                                     <Input 
@@ -4850,6 +5272,34 @@ function AdminDashboard() {
                         <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDeleteEvent} className="bg-destructive hover:bg-destructive/90" disabled={isSubmitting}>Delete Event</AlertDialogAction></AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
+
+                {isParentBulkModalOpen && db && auth && schoolId && (
+                    <ParentBulkPaymentModal
+                        isOpen={isParentBulkModalOpen}
+                        onClose={() => setIsParentBulkModalOpen(false)}
+                        students={students}
+                        feeCategories={feeCategories}
+                        schoolId={schoolId}
+                        db={db}
+                        auth={auth}
+                        periodId={selectedPeriodId || undefined}
+                        onSuccess={fetchAdminData}
+                    />
+                )}
+
+                {isParentBulkMainModalOpen && db && auth && schoolId && selectedPeriod && (
+                    <ParentBulkMainPaymentModal
+                        isOpen={isParentBulkMainModalOpen}
+                        onClose={() => setIsParentBulkMainModalOpen(false)}
+                        students={students}
+                        feeCategories={feeCategories}
+                        schoolId={schoolId}
+                        db={db}
+                        auth={auth}
+                        period={selectedPeriod}
+                        onSuccess={fetchAdminData}
+                    />
+                )}
 
                 {/* Unified Ledger Transaction Modal */}
                 <RecordTransactionModal 

@@ -2,9 +2,9 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { getStaffById, StaffId, getStudents, Student } from '@/lib/data-store';
-import { useFirebase } from '@/firebase/client-provider';
+import { useRouter } from 'next/navigation';
+import { StaffId, getStudents, Student, getSchoolDetails } from '@/lib/data-store';
+import { useFirebase, useAuth } from '@/firebase/client-provider';
 import { Loader2, LogOut, ChevronRight, GraduationCap, LayoutDashboard, BrainCircuit, AlertCircle, Calendar, Clock, User, Bell, HelpCircle, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -14,6 +14,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { motion, type Variants } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
+import { doc, getDoc } from 'firebase/firestore';
+import AccountantDashboardContent from '@/components/accountant-dashboard-content';
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -36,12 +38,9 @@ const itemVariants: Variants = {
 
 export default function StaffDashboard() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { db, auth } = useFirebase();
+  const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
-
-  const schoolId = searchParams.get('schoolId');
-  const staffId = searchParams.get('staffId');
 
   const [staffMember, setStaffMember] = useState<StaffId | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,26 +60,40 @@ export default function StaffDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!db || !schoolId || !staffId) {
-      if (!isLoading) {
-        router.replace('/staff/login');
-        toast({ title: 'Error', description: 'Missing required information.', variant: 'destructive' });
-      }
+    if (authLoading || !db) return;
+
+    if (!user) {
+      router.replace('/staff/login');
       return;
     }
 
     const fetchStaffData = async () => {
       try {
-        const member = await getStaffById(db, schoolId, staffId);
+        const staffDocRef = doc(db, 'staff', user.uid);
+        const staffSnap = await getDoc(staffDocRef);
 
-        if (member) {
+        if (staffSnap.exists()) {
+          const data = staffSnap.data();
+          const schoolData = await getSchoolDetails(db, data.schoolId);
+          if (schoolData?.isLocked) {
+            toast({ title: 'Access Denied', description: "This school's account is currently locked. Please contact support.", variant: 'destructive' });
+            router.replace('/staff/login');
+            return;
+          }
+
+          const member = {
+            ...data,
+            id: staffSnap.id,
+            dateAdded: data.dateAdded?.toDate ? data.dateAdded.toDate() : new Date(),
+          } as StaffId;
+
           if (member.isArchived) {
             toast({ title: 'Access Denied', description: 'This staff account has been archived.', variant: 'destructive' });
             router.replace('/staff/login');
             return;
           }
           setStaffMember(member);
-          sessionStorage.setItem('staffId', member.id);
+          sessionStorage.setItem('staffId', user.uid);
           sessionStorage.setItem('schoolId', member.schoolId);
           if (member.className) {
             sessionStorage.setItem('staffClassName', member.className);
@@ -96,7 +109,7 @@ export default function StaffDashboard() {
           ).length;
           setPresentCount(count);
         } else {
-          toast({ title: 'Login Failed', description: 'Invalid Staff ID for the provided School ID.', variant: 'destructive' });
+          toast({ title: 'Login Failed', description: 'No staff profile associated with this account.', variant: 'destructive' });
           router.replace('/staff/login');
         }
       } catch (error) {
@@ -109,7 +122,7 @@ export default function StaffDashboard() {
     };
 
     fetchStaffData();
-  }, [db, schoolId, staffId, router, toast, isLoading]);
+  }, [db, user, authLoading, router, toast]);
 
   const attendanceBreakdown = useMemo(() => {
       const breakdown: Record<string, { present: number, total: number }> = {};
@@ -141,7 +154,7 @@ export default function StaffDashboard() {
     toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
   };
 
-  if (isLoading) {
+  if (isLoading || authLoading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-4">
@@ -171,6 +184,16 @@ export default function StaffDashboard() {
           </CardContent>
         </Card>
       </div>
+    );
+  }
+
+  if (staffMember.role === 'Accountant') {
+    return (
+      <AccountantDashboardContent 
+        staffMember={staffMember}
+        handleLogout={handleLogout}
+        currentDate={currentDate}
+      />
     );
   }
 
@@ -261,7 +284,7 @@ export default function StaffDashboard() {
             {/* Primary Class Card */}
             <motion.div variants={itemVariants} className="lg:col-span-8">
               {staffMember.className ? (
-                <Link href={`/staff/class/${encodeURIComponent(staffMember.className)}?schoolId=${schoolId}`} passHref>
+                <Link href={`/staff/class/${encodeURIComponent(staffMember.className)}?schoolId=${staffMember.schoolId}`} passHref>
                   <Card className="h-full border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 cursor-pointer bg-white/80 backdrop-blur-xl group overflow-hidden relative ring-1 ring-gray-200/50">
                     {/* Card Background Decoration */}
                     <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-primary/10 to-transparent rounded-full blur-3xl -mr-20 -mt-20 transition-transform duration-700 group-hover:scale-150"></div>
@@ -371,7 +394,7 @@ export default function StaffDashboard() {
 
               <h3 className="text-lg font-semibold text-gray-800 px-1 hidden lg:block">Quick Tools</h3>
               
-              <Link href={`/teachers-corner?schoolId=${schoolId}&staffId=${staffId}`} passHref className="flex-1">
+              <Link href={`/teachers-corner?schoolId=${staffMember.schoolId}&staffId=${staffMember.id}`} passHref className="flex-1">
                 <Card className="h-full border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer bg-gradient-to-br from-indigo-600 to-purple-700 group relative overflow-hidden rounded-3xl">
                   {/* Decorative Elements */}
                   <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>

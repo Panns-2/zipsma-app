@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
-import { Inter, Roboto_Mono } from 'next/font/google';
+import { Outfit, Roboto_Mono } from 'next/font/google';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import FirebaseErrorListener from '@/components/FirebaseErrorListener';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
+import { FloatingChatWidget } from '@/components/floating-chat-widget';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
+const outfit = Outfit({ subsets: ['latin'], variable: '--font-sans' });
 const robotoMono = Roboto_Mono({ subsets: ['latin'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
@@ -23,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${robotoMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${robotoMono.variable}`}>
       <head>
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=3" />
         <meta name="theme-color" content="#1e3a8a" />
@@ -32,6 +33,7 @@ export default function RootLayout({
         <FirebaseClientProvider>
           <FirebaseErrorListener />
           {children}
+          <FloatingChatWidget />
           <Toaster />
         </FirebaseClientProvider>
       </body>

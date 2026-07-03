@@ -1,6 +1,7 @@
 import { getApps, initializeApp, getApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { getAuth } from 'firebase-admin/auth';
 
 /**
  * Robust Firebase Admin Database fetcher.
@@ -22,11 +23,16 @@ export function getAdminDb() {
           credential: cert({
             projectId,
             clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/^['"]|['"]$/g, '').replace(/\\n/g, '\n'),
           }),
         });
-      } catch (err) {
-        app = getApp();
+      } catch (err: any) {
+        console.error('Firebase Admin initialization error:', err);
+        try {
+          app = getApp();
+        } catch (e) {
+          throw new Error('Firebase Admin SDK failed to initialize with Service Account. Original error: ' + err.message);
+        }
       }
     } else {
       // 2. Default initialization (Works automatically in Firebase Cloud Functions / GCP)
@@ -54,11 +60,16 @@ export function getAdminDb() {
 }
 
 export function getAdminMessaging() {
-  const apps = getApps();
-  if (apps.length === 0) {
+  if (getApps().length === 0) {
       // This will initialize the app if it hasn't been already
       getAdminDb();
   }
-  return getMessaging(getApp());
+  return getMessaging(getApps()[0]);
 }
 
+export function getAdminAuth() {
+  if (getApps().length === 0) {
+      getAdminDb();
+  }
+  return getAuth(getApps()[0]);
+}

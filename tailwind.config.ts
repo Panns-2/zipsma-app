@@ -20,7 +20,7 @@ export default {
       fontFamily: {
         sans: ['var(--font-sans)', 'sans-serif'],
         body: ['var(--font-sans)', 'sans-serif'],
-        headline: ['var(--font-jakarta)', 'sans-serif'],
+        headline: ['"Soin Sans Pro"', 'var(--font-sans)', 'sans-serif'],
         jakarta: ['var(--font-jakarta)', 'sans-serif'],
         mono: ['var(--font-mono)', 'monospace'],
         code: ['var(--font-mono)', 'monospace'],

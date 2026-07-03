@@ -20,8 +20,20 @@
 # pnpm
 pnpm-lock.yaml
 node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
+
+# Local test scripts & scratch
+scratch/
+test-*.js
+test-*.ts
+get_school_details.js
+
+# Data dumps & text logs
+*.txt
+all_*.json
+bulk_transactions.json
+daily_fee_transactions.json
+last_24_hours.json
+recent_*.json
+school_payments.json
+very_recent.json
+users.json

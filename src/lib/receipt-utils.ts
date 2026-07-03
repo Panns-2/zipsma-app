@@ -113,7 +113,14 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Official Receipt - ${receiptId}</title>
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+                
+                @font-face {
+                    font-family: 'Soin Sans Pro';
+                    src: url('/SoinSansPro-Bold.ttf') format('truetype');
+                    font-weight: 700;
+                    font-style: normal;
+                }
                 
                 * {
                     box-sizing: border-box;
@@ -121,7 +128,7 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
                 }
 
                 body {
-                    font-family: 'Plus Jakarta Sans', sans-serif;
+                    font-family: 'Outfit', sans-serif;
                     margin: 0;
                     padding: 0;
                     color: ${navyBlue};
@@ -192,7 +199,7 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
                 }
 
                 .main-school-name {
-                    font-family: 'Plus Jakarta Sans', sans-serif;
+                    font-family: 'Soin Sans Pro', 'Outfit', sans-serif;
                     font-size: 32px;
                     font-weight: 800;
                     margin: 0 0 10px 0;
@@ -226,6 +233,7 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
                 }
 
                 .official-bar h1 {
+                    font-family: 'Soin Sans Pro', 'Outfit', sans-serif;
                     font-size: 22px;
                     font-weight: 800;
                     margin: 0;
@@ -243,6 +251,7 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
                 }
 
                 .section-header {
+                    font-family: 'Soin Sans Pro', 'Outfit', sans-serif;
                     font-weight: 800;
                     font-size: 18px;
                     margin-bottom: 15px;

@@ -5,7 +5,7 @@ import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Student, LedgerTransaction, AcademicPeriod, FeeCategory, isDailyTransaction, calculateInstallmentExpectedAmount } from '@/lib/data-store';
+import { Student, LedgerTransaction, AcademicPeriod, FeeCategory, isDailyTransaction, isDailyCategory, calculateInstallmentExpectedAmount } from '@/lib/data-store';
 import { cn } from '@/lib/utils';
 import { Landmark, TrendingUp, TrendingDown, Receipt, Utensils, UtensilsCrossed } from 'lucide-react';
 
@@ -70,8 +70,8 @@ export const StudentLedgerView: React.FC<StudentLedgerViewProps> = ({ student, p
 
         const dailyFeeBreakdown: Record<string, number> = {};
 
-        // Process all dynamic daily fee categories using the official category list
-        feeCategories.filter(c => c.isDaily).forEach(cat => {
+        // Process all dynamic daily fee categories using the official category list and legacy markers
+        feeCategories.filter(isDailyCategory).forEach(cat => {
             const normName = cat.name.toLowerCase().trim();
             const normId = cat.id;
             
@@ -144,46 +144,52 @@ export const StudentLedgerView: React.FC<StudentLedgerViewProps> = ({ student, p
         <div className="space-y-6">
             {/* High-Contrast Metric Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="border-[2px] border-primary shadow-sm bg-card">
-                    <CardContent className="p-4 md:p-6">
+                <Card className="border-none shadow-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white overflow-hidden relative">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <TrendingUp className="w-24 h-24 rotate-12" />
+                    </div>
+                    <CardContent className="p-4 md:p-6 relative z-10">
                         <div className="flex items-center justify-between mb-2">
-                            <p className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">Expected by Date</p>
-                            <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+                            <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-blue-100">Expected by Date</p>
+                            <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-blue-100" />
                         </div>
-                        <p className="text-lg md:text-2xl font-bold font-sans">GH¢{totals.expectedAmount.toFixed(2)}</p>
-                        <p className="text-[8px] md:text-[10px] mt-1 text-muted-foreground italic">Based on Installment Plan</p>
+                        <p className="text-2xl md:text-3xl font-black font-sans drop-shadow-sm">GH¢{totals.expectedAmount.toFixed(2)}</p>
+                        <p className="text-[9px] md:text-[11px] mt-2 text-blue-100 font-medium tracking-wide">Based on Installment Plan</p>
                     </CardContent>
                 </Card>
 
-                <Card className="border-[2px] shadow-sm bg-card border-purple-500">
-                    <CardContent className="p-4 md:p-6">
+                <Card className="border-none shadow-lg bg-gradient-to-br from-purple-500 to-fuchsia-600 text-white overflow-hidden relative">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Receipt className="w-24 h-24 rotate-12" />
+                    </div>
+                    <CardContent className="p-4 md:p-6 relative z-10">
                         <div className="flex items-center justify-between mb-2">
-                            <p className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Daily Accrued</p>
-                            <Receipt className="w-4 h-4 md:w-5 md:h-5 text-purple-500" />
+                            <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-purple-100">Total Daily Accrued</p>
+                            <Receipt className="w-4 h-4 md:w-5 md:h-5 text-purple-100" />
                         </div>
-                        <p className="text-lg md:text-2xl font-bold font-sans text-purple-500">
+                        <p className="text-2xl md:text-3xl font-black font-sans drop-shadow-sm">
                             GH¢{totals.dailyAccrued.toFixed(2)}
                         </p>
-                        <p className="text-[8px] md:text-[10px] mt-1 text-muted-foreground italic">Total daily fees accrued for this period</p>
+                        <p className="text-[9px] md:text-[11px] mt-2 text-purple-100 font-medium tracking-wide">Total daily fees accrued for this period</p>
                     </CardContent>
                 </Card>
 
                 <Card className={cn(
-                    "border-[2px] shadow-sm bg-card",
-                    totals.outstanding > 0 ? "border-destructive bg-destructive/5" : "border-success bg-success/5"
+                    "border-none shadow-lg text-white overflow-hidden relative",
+                    totals.outstanding > 0 ? "bg-gradient-to-br from-red-500 to-rose-600" : "bg-gradient-to-br from-emerald-500 to-teal-600"
                 )}>
-                    <CardContent className="p-4 md:p-6">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Landmark className="w-24 h-24 rotate-12" />
+                    </div>
+                    <CardContent className="p-4 md:p-6 relative z-10">
                         <div className="flex items-center justify-between mb-2">
-                            <p className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Balance</p>
-                            <Landmark className={cn("w-4 h-4 md:w-5 md:h-5", totals.outstanding > 0 ? "text-destructive" : "text-success")} />
+                            <p className={cn("text-[10px] md:text-xs font-bold uppercase tracking-widest", totals.outstanding > 0 ? "text-red-100" : "text-emerald-100")}>Total Balance</p>
+                            <Landmark className={cn("w-4 h-4 md:w-5 md:h-5", totals.outstanding > 0 ? "text-red-100" : "text-emerald-100")} />
                         </div>
-                        <p className={cn(
-                            "text-lg md:text-2xl font-bold font-sans",
-                            totals.outstanding > 0 ? "text-destructive" : "text-success"
-                        )}>
+                        <p className="text-2xl md:text-3xl font-black font-sans drop-shadow-sm">
                             GH¢{totals.outstanding.toFixed(2)}
                         </p>
-                        <p className="text-[8px] md:text-[10px] mt-1 text-muted-foreground font-medium">Net balance to date</p>
+                        <p className={cn("text-[9px] md:text-[11px] mt-2 font-medium tracking-wide", totals.outstanding > 0 ? "text-red-100" : "text-emerald-100")}>Net balance to date</p>
                     </CardContent>
                 </Card>
             </div>

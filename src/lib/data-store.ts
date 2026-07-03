@@ -97,6 +97,7 @@ export interface Student {
     schoolId: string;
     isArchived: boolean;
     muteReminders?: boolean;
+    preferredVoiceLanguage?: 'en-GH' | 'tw' | string;
 
     // Personal Details
     dateOfBirth: string;
@@ -171,6 +172,7 @@ export interface StaffId {
     uid?: string;
     schoolId: string;
     isArchived: boolean;
+    staffId?: string;
 }
 export interface StaffDetails {
     id: string; // Same as StaffId
@@ -230,6 +232,8 @@ export interface School {
     hubtelPaymentClientId?: string;
     hubtelPaymentClientSecret?: string;
     hubtelMerchantNumber?: string;
+    sendexaApiKey?: string;
+    sendexaVoiceCallerId?: string;
     currentPeriodId?: string;
     settingsPin?: string;
 }
@@ -662,7 +666,7 @@ function getStudentDocRef(db: Firestore, idOrStudentId: string, schoolId?: strin
 
 export async function archiveStudent(db: Firestore, auth: Auth, studentId: string, archive = true, schoolId?: string) {
   await ensureUserAuthenticated(auth);
-  const studentDocRef = getStudentDocRef(db, studentId, schoolId);
+  const { ref: studentDocRef } = await resolveStudentDoc(db, studentId, schoolId);
   await updateDoc(studentDocRef, { isArchived: archive }).catch(async (serverError) => {
     const permissionError = new FirestorePermissionError({
         path: studentDocRef.path,
@@ -678,8 +682,7 @@ export async function archiveStudent(db: Firestore, auth: Auth, studentId: strin
 export async function deleteStudent(db: Firestore, storage: FirebaseStorage, auth: Auth, studentId: string, schoolId?: string) {
   await ensureUserAuthenticated(auth);
 
-  const studentDocRef = getStudentDocRef(db, studentId, schoolId);
-  const studentSnap = await getDoc(studentDocRef);
+  const { ref: studentDocRef, snap: studentSnap } = await resolveStudentDoc(db, studentId, schoolId);
   const studentData = studentSnap.data() as Student;
 
   // Delete profile picture if it exists
@@ -947,8 +950,14 @@ export function isDailyTransaction(t: LedgerTransaction, categories: FeeCategory
         const markers = ['feeding', 'daily', 'canteen', 'extra classes', 'late feeding'];
         if (markers.some(m => catValue.includes(m))) return true;
     }
-    
     return false;
+}
+
+export function isDailyCategory(cat: FeeCategory): boolean {
+    if (cat.isDaily) return true;
+    const catValue = String(cat.name || "").toLowerCase().trim();
+    const markers = ['feeding', 'daily', 'canteen', 'extra classes', 'late feeding'];
+    return markers.some(m => catValue.includes(m));
 }
 
 export function calculateInstallmentExpectedAmount(
@@ -1190,6 +1199,331 @@ export async function postBulkDailyPayments(db: Firestore, auth: Auth, schoolId:
 
     await batch.commit().catch(async (serverError) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ operation: 'write', path: 'bulk-daily-payments' }));
+        throw serverError;
+    });
+}
+
+export function calculateDailyOutstanding(student: Student, categoryId: string, feeCategories: FeeCategory[]): number {
+    const isDaily = (t: LedgerTransaction) => isDailyTransaction(t, feeCategories);
+    
+    // Total Credits for this category
+    let totalCredits = 0;
+    let totalDebits = 0;
+
+    const fullLedger = (student.ledger || []).filter(t => !t.isVoided);
+    const dailyLedger = fullLedger.filter(isDaily);
+
+    dailyLedger.forEach(t => {
+        // Strict category match if provided, otherwise check if it's the right category
+        const tCatName = t.category?.toLowerCase() || '';
+        const tCatId = t.categoryId || tCatName;
+        
+        // We only care about transactions matching the specific daily category requested
+        const categoryMatch = 
+            tCatId === categoryId || 
+            tCatName === categoryId ||
+            (categoryId === 'feeding' && (tCatName.includes('feeding'))) ||
+            (tCatName.includes(categoryId.toLowerCase()));
+
+        if (categoryMatch) {
+             totalCredits += Number(t.credit) || 0;
+             totalDebits += Number(t.debit) || 0;
+        }
+    });
+
+    // Calculate accrued from attendance
+    let accrued = 0;
+    const rateObj = (student.dailyFees || []).find(f => f.categoryId === categoryId || f.categoryId === categoryId.toLowerCase());
+    const rate = Number(rateObj?.rate) || 0;
+    
+    if (rate > 0) {
+        const daysPresent = (student.attendance || []).filter(a => a.attended).length;
+        accrued = daysPresent * rate;
+    }
+
+    return accrued + totalDebits - totalCredits;
+}
+
+export async function postBulkParentPayment(
+    db: Firestore, 
+    auth: Auth, 
+    schoolId: string, 
+    parentIdentifier: string, 
+    amount: number, 
+    categoryId: string, 
+    categoryName: string,
+    periodId?: string,
+    description?: string
+) {
+    const user = await ensureUserAuthenticated(auth);
+    if (amount <= 0) return;
+
+    const allStudents = await getStudents(db, schoolId);
+    
+    // Match students by parentId or parentPhone or parentName
+    const students = allStudents.filter(s => 
+        (s.parentId && s.parentId === parentIdentifier) || 
+        (s.parentPhone && s.parentPhone === parentIdentifier) || 
+        (s.parentName && s.parentName === parentIdentifier)
+    );
+
+    if (students.length === 0) {
+         throw new Error("No children found for this parent.");
+    }
+
+    const feeCategories = await getFeeCategories(db, schoolId);
+
+    // Calculate outstanding for each student
+    const studentDebts = students.map(student => {
+        const debt = calculateDailyOutstanding(student, categoryId, feeCategories);
+        return { student, debt };
+    });
+
+    let remainingAmount = amount;
+    const paymentsToRecord: { student: Student, amount: number }[] = [];
+
+    // Pass 1: Pay off debts
+    for (const item of studentDebts) {
+        if (item.debt > 0 && remainingAmount > 0) {
+            const payAmount = Math.min(item.debt, remainingAmount);
+            paymentsToRecord.push({ student: item.student, amount: payAmount });
+            remainingAmount -= payAmount;
+        }
+    }
+
+    // Pass 2: Distribute leftover advance credit equally
+    if (remainingAmount > 0.01) {
+        const advancePerChild = remainingAmount / students.length;
+        for (const student of students) {
+            const existing = paymentsToRecord.find(p => p.student.studentId === student.studentId);
+            if (existing) {
+                existing.amount += advancePerChild;
+            } else {
+                paymentsToRecord.push({ student, amount: advancePerChild });
+            }
+        }
+    }
+
+    const batch = writeBatch(db);
+    const timestamp = Date.now();
+    const dateStr = safeDateString(new Date());
+
+    paymentsToRecord.forEach((p, index) => {
+        if (p.amount <= 0.009) return; // ignore tiny fractions
+
+        const currentLedger = p.student.ledger || [];
+
+        const newTransaction: LedgerTransaction = {
+            id: `${timestamp}-parent-${index}`,
+            date: dateStr,
+            type: 'payment',
+            category: categoryName,
+            categoryId: categoryId,
+            description: description || `Bulk Parent Payment (${categoryName})`,
+            debit: 0,
+            credit: parseFloat(p.amount.toFixed(2)),
+            recordedBy: user.uid,
+            periodId: periodId
+        };
+
+        Object.keys(newTransaction as any).forEach(key => {
+            if ((newTransaction as any)[key] === undefined) delete (newTransaction as any)[key];
+        });
+
+        const newLedger = [...currentLedger, newTransaction];
+        newLedger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        const studentDocRef = p.student.id 
+            ? doc(db, studentsCollection, p.student.id) 
+            : getStudentDocRef(db, p.student.studentId, schoolId);
+
+        batch.update(studentDocRef, { 
+            ledger: newLedger,
+            ...(p.student.schoolId ? { schoolId: p.student.schoolId } : (schoolId ? { schoolId: schoolId.toUpperCase() } : {}))
+        });
+    });
+
+    await batch.commit().catch(async (serverError) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ operation: 'write', path: 'bulk-parent-payment' }));
+        throw serverError;
+    });
+}
+
+export interface AutoPaymentDistributionItem {
+    studentId: string;
+    student: Student;
+    categoryId: string;
+    categoryName: string;
+    amount: number;
+}
+
+export async function postBulkParentAutoDistributedPayment(
+    db: Firestore, 
+    auth: Auth, 
+    schoolId: string, 
+    distributions: AutoPaymentDistributionItem[],
+    periodId?: string,
+    description?: string
+) {
+    const user = await ensureUserAuthenticated(auth);
+    if (!distributions || distributions.length === 0) return;
+
+    const batch = writeBatch(db);
+    const timestamp = Date.now();
+    const dateStr = safeDateString(new Date());
+
+    // We might have multiple payments for the same student. Group them to update the ledger once per student.
+    const studentUpdates = new Map<string, { student: Student; newTransactions: LedgerTransaction[] }>();
+
+    distributions.forEach((d, index) => {
+        if (d.amount <= 0.009) return;
+
+        const currentLedger = studentUpdates.get(d.studentId)?.student.ledger || d.student.ledger || [];
+        const existingNewTx = studentUpdates.get(d.studentId)?.newTransactions || [];
+
+        const newTransaction: LedgerTransaction = {
+            id: `${timestamp}-parent-${index}-${d.studentId}`,
+            date: dateStr,
+            type: 'payment',
+            category: d.categoryName,
+            categoryId: d.categoryId,
+            description: description || `Bulk Parent Auto-Distributed Payment (${d.categoryName})`,
+            debit: 0,
+            credit: parseFloat(d.amount.toFixed(2)),
+            recordedBy: user.uid,
+            periodId: periodId
+        };
+
+        Object.keys(newTransaction as any).forEach(key => {
+            if ((newTransaction as any)[key] === undefined) delete (newTransaction as any)[key];
+        });
+
+        studentUpdates.set(d.studentId, {
+            student: d.student,
+            newTransactions: [...existingNewTx, newTransaction]
+        });
+    });
+
+    studentUpdates.forEach(({ student, newTransactions }, studentId) => {
+        const currentLedger = student.ledger || [];
+        const newLedger = [...currentLedger, ...newTransactions];
+        newLedger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        const studentDocRef = student.id 
+            ? doc(db, studentsCollection, student.id) 
+            : getStudentDocRef(db, studentId, schoolId);
+
+        batch.update(studentDocRef, { 
+            ledger: newLedger,
+            ...(student.schoolId ? { schoolId: student.schoolId } : (schoolId ? { schoolId: schoolId.toUpperCase() } : {}))
+        });
+    });
+
+    await batch.commit().catch(async (serverError) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ operation: 'write', path: 'bulk-parent-auto-payment' }));
+        throw serverError;
+    });
+}
+
+
+export async function postBulkParentMainPayment(
+    db: Firestore, 
+    auth: Auth, 
+    schoolId: string, 
+    parentIdentifier: string, 
+    amount: number, 
+    period: AcademicPeriod,
+    feeCategories: FeeCategory[],
+    description?: string
+) {
+    const user = await ensureUserAuthenticated(auth);
+    if (amount <= 0) return;
+
+    const allStudents = await getStudents(db, schoolId);
+    
+    // Match students by parentId or parentPhone or parentName
+    const students = allStudents.filter(s => 
+        (s.parentId && s.parentId === parentIdentifier) || 
+        (s.parentPhone && s.parentPhone === parentIdentifier) || 
+        (s.parentName && s.parentName === parentIdentifier)
+    );
+
+    if (students.length === 0) {
+         throw new Error("No children found for this parent.");
+    }
+
+    // Calculate outstanding for each student using main fee logic
+    const studentDebts = students.map(student => {
+        const { outstandingBalance } = calculateInstallmentOutstandingBalance(student, period, feeCategories);
+        return { student, debt: outstandingBalance };
+    });
+
+    let remainingAmount = amount;
+    const paymentsToRecord: { student: Student, amount: number }[] = [];
+
+    // Pass 1: Pay off debts
+    for (const item of studentDebts) {
+        if (item.debt > 0 && remainingAmount > 0) {
+            const payAmount = Math.min(item.debt, remainingAmount);
+            paymentsToRecord.push({ student: item.student, amount: payAmount });
+            remainingAmount -= payAmount;
+        }
+    }
+
+    // Pass 2: Distribute leftover advance credit equally
+    if (remainingAmount > 0.01) {
+        const advancePerChild = remainingAmount / students.length;
+        for (const student of students) {
+            const existing = paymentsToRecord.find(p => p.student.studentId === student.studentId);
+            if (existing) {
+                existing.amount += advancePerChild;
+            } else {
+                paymentsToRecord.push({ student, amount: advancePerChild });
+            }
+        }
+    }
+
+    const batch = writeBatch(db);
+    const timestamp = Date.now();
+    const dateStr = safeDateString(new Date());
+
+    paymentsToRecord.forEach((p, index) => {
+        if (p.amount <= 0.009) return; // ignore tiny fractions
+
+        const currentLedger = p.student.ledger || [];
+
+        const newTransaction: LedgerTransaction = {
+            id: `${timestamp}-mainparent-${index}`,
+            date: dateStr,
+            type: 'payment',
+            category: 'fees_payment',
+            categoryId: 'fees_payment',
+            description: description || `Bulk Parent Main Payment`,
+            debit: 0,
+            credit: parseFloat(p.amount.toFixed(2)),
+            recordedBy: user.uid,
+            periodId: period.id
+        };
+
+        Object.keys(newTransaction as any).forEach(key => {
+            if ((newTransaction as any)[key] === undefined) delete (newTransaction as any)[key];
+        });
+
+        const newLedger = [...currentLedger, newTransaction];
+        newLedger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        const studentDocRef = p.student.id 
+            ? doc(db, studentsCollection, p.student.id) 
+            : getStudentDocRef(db, p.student.studentId, schoolId);
+
+        batch.update(studentDocRef, { 
+            ledger: newLedger,
+            ...(p.student.schoolId ? { schoolId: p.student.schoolId } : (schoolId ? { schoolId: schoolId.toUpperCase() } : {}))
+        });
+    });
+
+    await batch.commit().catch(async (serverError) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ operation: 'write', path: 'bulk-parent-main-payment' }));
         throw serverError;
     });
 }

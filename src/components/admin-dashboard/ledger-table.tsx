@@ -19,6 +19,7 @@ interface LedgerTableProps {
     student: Student;
     academicPeriods: AcademicPeriod[];
     feeCategories: FeeCategory[];
+    hideDailyAmounts?: boolean;
 }
 
 export const LedgerTable: React.FC<LedgerTableProps> = ({ 
@@ -29,7 +30,8 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
     schoolDetails, 
     student, 
     academicPeriods, 
-    feeCategories 
+    feeCategories,
+    hideDailyAmounts = false
 }) => {
     if (ledger.length === 0) {
         return (
@@ -45,17 +47,18 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                 <Table>
                     <TableHeader className="bg-primary/5">
                         <TableRow className="hover:bg-transparent border-primary/10">
-                            <TableHead className="w-[160px] font-bold text-primary text-xs uppercase tracking-wider font-jakarta">Date</TableHead>
-                            <TableHead className="font-bold text-primary text-xs uppercase tracking-wider font-jakarta">Description</TableHead>
-                            <TableHead className="text-right font-bold text-primary text-xs uppercase tracking-wider font-jakarta">Fee (+)</TableHead>
-                            <TableHead className="text-right font-bold text-primary text-xs uppercase tracking-wider font-jakarta">Payment (-)</TableHead>
-                            <TableHead className="text-right font-bold text-primary text-xs uppercase tracking-wider font-jakarta">Total Balance</TableHead>
-                            <TableHead className="text-right font-bold text-primary text-xs uppercase tracking-wider font-jakarta">Actions</TableHead>
+                            <TableHead className="w-[160px] font-bold text-primary text-sm uppercase tracking-wider font-jakarta">Date</TableHead>
+                            <TableHead className="font-bold text-primary text-sm uppercase tracking-wider font-jakarta">Description</TableHead>
+                            <TableHead className="text-right font-bold text-primary text-sm uppercase tracking-wider font-jakarta">{hideDailyAmounts ? 'Daily Rate' : 'Charges'}</TableHead>
+                            <TableHead className="text-right font-bold text-primary text-sm uppercase tracking-wider font-jakarta">{hideDailyAmounts ? 'Credit Balance' : 'Balance'}</TableHead>
+                            <TableHead className="text-right font-bold text-primary text-sm uppercase tracking-wider font-jakarta">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {ledger.map((t, idx) => {
-                            const runningBalance = ledger.slice(0, idx + 1).reduce((sum, curr) => sum + (curr.isVoided ? 0 : (curr.debit || 0) - (curr.credit || 0)), 0);
+                            const rawBalance = ledger.slice(0, idx + 1).reduce((sum, curr) => sum + (curr.isVoided ? 0 : (Number(curr.debit) || 0) - (Number(curr.credit) || 0)), 0);
+                            const runningBalance = hideDailyAmounts ? -rawBalance : rawBalance;
+                            
                             return (
                                 <TableRow key={t.id} className={cn("transition-colors hover:bg-primary/5 border-primary/5", t.isVoided && "opacity-50 grayscale bg-muted/20")}>
                                     <TableCell className="text-sm font-medium text-numeric">{t.date ? t.date.split('-').reverse().join('/') : ''}</TableCell>
@@ -124,19 +127,28 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                                             {t.isVoided && (
                                                 <div className="flex items-center gap-1.5 mt-1 ml-4">
                                                     <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
-                                                    <span className="text-[10px] text-destructive uppercase font-black tracking-tighter">Cancelled: {t.voidedReason}</span>
+                                                    <span className="text-xs text-destructive uppercase font-black tracking-tighter">Cancelled: {t.voidedReason}</span>
                                                 </div>
                                             )}
                                         </div>
                                     </TableCell>
                                     <TableCell className="text-right text-numeric text-sm font-semibold">
-                                        {t.debit > 0 ? <span className="text-primary">GH¢{t.debit.toFixed(2)}</span> : <span className="text-muted-foreground/30">-</span>}
-                                    </TableCell>
-                                    <TableCell className="text-right text-numeric text-sm font-semibold">
-                                        {t.credit > 0 ? <span className="text-emerald-600 font-bold">GH¢{t.credit.toFixed(2)}</span> : <span className="text-muted-foreground/30">-</span>}
+                                        {(() => {
+                                            if (t.debit <= 0 && t.credit <= 0) return <span className="text-muted-foreground/30">-</span>;
+                                            
+                                            if (t.credit > 0) {
+                                                return <span className="text-emerald-600 dark:text-emerald-400 font-bold">-GH¢{t.credit.toFixed(2)}</span>;
+                                            }
+
+                                            return <span className="text-primary font-bold">GH¢{t.debit.toFixed(2)}</span>;
+                                        })()}
                                     </TableCell>
                                     <TableCell className="text-right font-black text-numeric text-sm">
-                                        <span className={cn(runningBalance > 0 ? "text-destructive" : "text-primary font-bold")}>
+                                        <span className={cn(
+                                            hideDailyAmounts 
+                                                ? (runningBalance < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400 font-black")
+                                                : (runningBalance > 0 ? "text-destructive" : "text-primary font-bold")
+                                        )}>
                                             GH¢{(runningBalance || 0).toFixed(2)}
                                         </span>
                                     </TableCell>
@@ -175,7 +187,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                                                                 <Button 
                                                                     variant="ghost" 
                                                                     size="icon" 
-                                                                    className="h-8 w-8 text-amber-600 hover:bg-amber-50 transition-all active:scale-90" 
+                                                                    className="h-8 w-8 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-90" 
                                                                     onClick={() => onEdit(t)}
                                                                 >
                                                                     <Edit className="h-4 w-4" />

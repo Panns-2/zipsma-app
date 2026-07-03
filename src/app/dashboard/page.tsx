@@ -59,8 +59,25 @@ import {
 } from "@/components/ui/table";
 
 // Notification Prompt Component
-const NotificationPrompt = ({ permission, requestPermission }: { permission: NotificationPermission, requestPermission: () => void }) => {
-    if (permission !== 'default') return null;
+const NotificationPrompt = ({ permission, requestPermission, fcmToken }: { permission: NotificationPermission, requestPermission: () => void, fcmToken: string | null }) => {
+    if (fcmToken) return null;
+
+    if (permission === 'denied') {
+        return (
+            <div className="mb-8">
+                <Card className="border-red-200 bg-red-50 text-red-900 shadow-sm">
+                    <CardHeader className="py-4">
+                        <CardTitle className="text-sm font-bold flex items-center gap-2">
+                            <Info className="w-4 h-4 text-red-600" /> Notifications Blocked
+                        </CardTitle>
+                        <CardDescription className="text-red-700 text-xs">
+                            Your browser is blocking notifications. Please enable them in your device settings (or "Add to Home Screen" if on iOS) to receive alerts.
+                        </CardDescription>
+                    </CardHeader>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -81,7 +98,7 @@ const NotificationPrompt = ({ permission, requestPermission }: { permission: Not
                         onClick={requestPermission} 
                         className="bg-white text-blue-700 hover:bg-blue-50 font-black px-8 py-6 rounded-2xl shadow-lg transition-all active:scale-95 text-xs uppercase tracking-widest"
                     >
-                        Enable Notifications
+                        {permission === 'granted' ? 'Retry Setup' : 'Enable Notifications'}
                     </Button>
                 </CardFooter>
             </Card>
@@ -171,7 +188,7 @@ function DashboardContent() {
     const schoolId = searchParams.get('schoolId');
     
     // Initialize FCM Notifications
-    const { permission, requestPermission } = useFCM(urlId, schoolId);
+    const { permission, requestPermission, fcmToken } = useFCM(urlId, schoolId);
     
     // Edit Profile State
     const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -687,7 +704,7 @@ function DashboardContent() {
                     schoolLogoUrl={schoolDetails?.logoUrl}
                 />
                 <main className="container mx-auto px-4 py-8 pb-24 md:pb-8">
-                    <NotificationPrompt permission={permission} requestPermission={requestPermission} />
+            <NotificationPrompt permission={permission} requestPermission={requestPermission} fcmToken={fcmToken} />
                     <Tabs value={familyActiveTab} onValueChange={(val: any) => setFamilyActiveTab(val)} className="w-full">
                         <TabsList className="grid w-full grid-cols-3 h-auto mb-8 bg-white/50 backdrop-blur-sm p-1 rounded-2xl border border-white/20">
                             <TabsTrigger value="overview" className="rounded-xl py-3 font-bold text-xs data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Family Overview</TabsTrigger>
@@ -982,7 +999,7 @@ function DashboardContent() {
             schoolLogoUrl={schoolDetails?.logoUrl}
         />
         <main className="container mx-auto px-4 py-8 pb-24 md:pb-8">
-            <NotificationPrompt permission={permission} requestPermission={requestPermission} />
+            <NotificationPrompt permission={permission} requestPermission={requestPermission} fcmToken={fcmToken} />
             {isFamilyView && (
                 <Button variant="ghost" className="mb-4 text-primary hover:text-primary/80" onClick={() => { setActiveStudentId(null); setStudentData(null); }}>
                     ← Back to Family List
@@ -1095,9 +1112,9 @@ function DashboardContent() {
                          )}
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                    <div className="space-y-8 items-start">
                         {/* 2. Main Column: Statement of Account */}
-                        <div className="lg:col-span-2 space-y-8">
+                        <div className="space-y-8">
                             <section>
                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                                     <h3 className="text-xl font-bold text-primary flex items-center gap-2 underline decoration-primary/20 decoration-4 underline-offset-8">
@@ -1130,19 +1147,8 @@ function DashboardContent() {
                                 />
                             </section>
 
-                            {/* Attendance Heatmap / Records */}
                             <section>
-                                <h3 className="text-xl font-bold text-primary flex items-center gap-2 mb-6 underline decoration-primary/20 decoration-4 underline-offset-8">
-                                    <CalendarDays className="w-5 h-5 text-indigo-600" /> Attendance History
-                                </h3>
-                                <AttendanceCard attendance={studentData.attendance || []} />
-                            </section>
-                        </div>
-
-                        {/* 3. Sidebar: Payment Portal */}
-                        <aside className="space-y-8 lg:sticky lg:top-8">
-                            <div>
-                                 <h3 className="text-xl font-bold text-primary flex items-center gap-2 mb-6">
+                                 <h3 className="text-xl font-bold text-primary flex items-center gap-2 mb-6 underline decoration-primary/20 decoration-4 underline-offset-8">
                                     <Smartphone className="w-5 h-5 text-indigo-600" /> Quick Payment
                                 </h3>
                                 <Card className="overflow-hidden border-none shadow-2xl bg-white/80 backdrop-blur-md">
@@ -1158,18 +1164,20 @@ function DashboardContent() {
                                             </div>
                                         </div>
                                     </CardHeader>
-                                    <CardContent className="space-y-6">
+                                    <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                         {/* Primary Action: Online Payment */}
-                                        <div className="p-5 rounded-2xl bg-slate-900 text-white shadow-xl relative overflow-hidden group">
+                                        <div className="p-5 rounded-2xl bg-slate-900 text-white shadow-xl relative overflow-hidden group flex flex-col justify-between">
                                             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                                <Wallet className="w-20 h-20 -mr-8 -mt-8 rotate-12" />
+                                                <Wallet className="w-32 h-32 -mr-12 -mt-12 rotate-12" />
                                             </div>
-                                            <div className="relative z-10">
-                                                <div className="flex items-center gap-2 mb-3">
-                                                    <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-200 border-indigo-500/30 hover:bg-indigo-500/30">Instant Pay</Badge>
-                                                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">Hubtel Secure</span>
+                                            <div className="relative z-10 flex flex-col h-full justify-center">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                        <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-200 border-indigo-500/30 hover:bg-indigo-500/30">Instant Pay</Badge>
+                                                        <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">Hubtel Secure</span>
+                                                    </div>
+                                                    <h4 className="text-xl font-bold mb-6">Online via Hubtel</h4>
                                                 </div>
-                                                <h4 className="text-lg font-bold mb-4">Online via Hubtel</h4>
                                                 <FeePaymentDialog
                                                     studentId={studentData.studentId}
                                                     studentName={studentData.name}
@@ -1254,8 +1262,16 @@ function DashboardContent() {
                                         </p>
                                     </CardFooter>
                                 </Card>
-                            </div>
-                        </aside>
+                            </section>
+
+                            {/* Attendance Heatmap / Records */}
+                            <section>
+                                <h3 className="text-xl font-bold text-primary flex items-center gap-2 mb-6 underline decoration-primary/20 decoration-4 underline-offset-8">
+                                    <CalendarDays className="w-5 h-5 text-indigo-600" /> Attendance History
+                                </h3>
+                                <AttendanceCard attendance={studentData.attendance || []} />
+                            </section>
+                        </div>
                     </div>
 
                 </TabsContent>

@@ -25,8 +25,7 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:641452454332:web:5b665c368380c00360bbb9"
   - variable: NEXT_PUBLIC_FIREBASE_VAPID_KEY
-    value: "BLob4pDIUvf6t1kmsI0meO62zlTVeHKz6XVbonIYhdmQlBl0_5-I-N1UPu4ufSmi1lcCUb9\
-      eer-M5HVYXoDMoDE"
+    value: "BLob4pDIUvf6t1kmsI0meO62zlTVeHKz6XVbonIYhdmQlBl0_5-I-N1UPu4ufSmi1lcCUb9eer-M5HVYXoDMoDE"
   - variable: NEXT_PUBLIC_SUPER_ADMIN_EMAIL
     value: "solandy242@gmail.com"
   - variable: CRON_SECRET

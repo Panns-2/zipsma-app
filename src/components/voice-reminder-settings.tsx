@@ -30,7 +30,7 @@ import {
 
 const defaultMessage = `Dear Parent, this is a friendly reminder that {name}'s outstanding balance is {balance}. Please make a payment to avoid any inconvenience. Thank you`;
 
-export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
+export function VoiceReminderSettings({ schoolId }: { schoolId: string }) {
     const { db } = useFirebase();
     const { toast } = useToast();
     
@@ -43,7 +43,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isTesting, setIsTesting] = useState(false);
     const [recentLogs, setRecentLogs] = useState<any[]>([]);
-    const [showConfirmRealSms, setShowConfirmRealSms] = useState(false);
+    const [showConfirmRealVoice, setShowConfirmRealVoice] = useState(false);
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -54,7 +54,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
             }
 
             setIsLoading(true);
-            const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'feeReminders');
+            const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'voiceFeeReminders');
 
             try {
                 const docSnap = await getDoc(settingsRef);
@@ -120,7 +120,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
         }
         
         setIsSubmitting(true);
-        const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'feeReminders');
+        const settingsRef = doc(db, 'schools', schoolId.toUpperCase(), 'settings', 'voiceFeeReminders');
         try {
             const settingsToSave = {
                 isEnabled,
@@ -148,7 +148,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
             // In production, this should be handled more securely.
             const secret = 'CRON_SECRET';
             
-            const response = await fetch(`/api/cron?test=true&dryRun=${dryRun}&schoolId=${schoolId}&channel=sms&type=fee`, {
+            const response = await fetch(`/api/cron?test=true&dryRun=${dryRun}&schoolId=${schoolId}&channel=voice&type=fee`, {
                 method: 'GET',
                 headers: {
                     'x-cron-secret': secret
@@ -190,8 +190,8 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-heading-lg">Fees Reminder Settings</CardTitle>
-                    <CardDescription>Configure automated SMS reminders for parents about overdue fee payments.</CardDescription>
+                    <CardTitle className="text-heading-lg">Voice Fees Reminder Settings</CardTitle>
+                    <CardDescription>Configure automated Voice calls for parents about overdue fee payments.</CardDescription>
                 </CardHeader>
                 {isLoading ? (
                      <div className="flex items-center justify-center p-8">
@@ -203,13 +203,13 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                             <div className="flex flex-col gap-4">
                                 <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/30">
                                     <div className="space-y-0.5">
-                                        <Label htmlFor="reminder-enabled" className="text-base flex items-center gap-2"><Smartphone className="w-4 h-4"/> Enable SMS Fee Reminders</Label>
+                                        <Label htmlFor="voice-reminder-enabled" className="text-base flex items-center gap-2"><Mic className="w-4 h-4"/> Enable Automated Voice Calls (via Sendexa)</Label>
                                         <p className="text-sm text-muted-foreground">
-                                            Turn on or off the automated SMS fee reminder system.
+                                            Turn on or off the automated Text-to-Speech voice calls for fee reminders.
                                         </p>
                                     </div>
                                     <Switch
-                                        id="reminder-enabled"
+                                        id="voice-reminder-enabled"
                                         checked={isEnabled}
                                         onCheckedChange={setIsEnabled}
                                         disabled={isSubmitting}
@@ -293,28 +293,28 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                                             Simulate Test (Dry Run)
                                         </Button>
                                         
-                                        <AlertDialog open={showConfirmRealSms} onOpenChange={setShowConfirmRealSms}>
+                                        <AlertDialog open={showConfirmRealVoice} onOpenChange={setShowConfirmRealVoice}>
                                             <Button 
                                                 type="button" 
                                                 variant="secondary" 
                                                 className="flex-1"
-                                                onClick={() => setShowConfirmRealSms(true)}
+                                                onClick={() => setShowConfirmRealVoice(true)}
                                                 disabled={isTesting || isSubmitting}
                                             >
                                                 {isTesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />}
-                                                Send Real Test SMS
+                                                Send Real Test Voice Call
                                             </Button>
                                             <AlertDialogContent>
                                                 <AlertDialogHeader>
-                                                    <AlertDialogTitle>Send Real SMS Reminders?</AlertDialogTitle>
+                                                    <AlertDialogTitle>Send Real Voice Reminders?</AlertDialogTitle>
                                                     <AlertDialogDescription>
-                                                        This will send ACTUAL SMS messages to all parents with outstanding balances. This action will incur costs on your Hubtel account.
+                                                        This will send ACTUAL Voice Calls to all parents with outstanding balances. This action will incur costs on your Sendexa account.
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
                                                 <AlertDialogFooter>
                                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                                     <AlertDialogAction onClick={() => {
-                                                        console.log("Real SMS confirmation accepted");
+                                                        console.log("Real Voice confirmation accepted");
                                                         handleTriggerTest(false);
                                                     }}>
                                                         Proceed & Send
@@ -339,7 +339,7 @@ export function FeesReminderSettings({ schoolId }: { schoolId: string }) {
                 )}
             </Card>
 
-            {isEnabled && (
+            {(isEnabled) && (
                 <Card>
                     <CardHeader>
                         <CardTitle className="text-heading-sm flex items-center gap-2">
