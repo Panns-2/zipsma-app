@@ -415,10 +415,11 @@ export async function GET(request: Request) {
                                                         body: JSON.stringify({
                                                             to: e164Phone,
                                                             from: schoolData.sendexaVoiceCallerId || 'SENDEXA',
-                                                            type: 'tts',
                                                             message: voiceMessage,
-                                                            language: voiceLanguage,
-                                                            repeat: 2
+                                                            voice: 'female',
+                                                            language: voiceLanguage || 'en',
+                                                            callType: 'OUTBOUND_OTP',
+                                                            destinationType: 'MOBILE'
                                                         })
                                                     });
 
