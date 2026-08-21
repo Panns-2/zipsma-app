@@ -18,6 +18,7 @@ import {
   writeBatch,
   orderBy,
   type Firestore,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject, type FirebaseStorage } from 'firebase/storage';
 import { signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, User, UserCredential, onAuthStateChanged, type Auth, signInAnonymously, sendEmailVerification } from 'firebase/auth';
@@ -39,6 +40,9 @@ const reportSettingsCollection = 'reportSettings';
 const studentReportsCollection = 'studentReports';
 const feeCategoriesCollection = 'feeCategories';
 const pendingPaymentsCollection = 'pending_payments';
+const parentsCollection = 'parents';
+const budgetsCollection = 'budgets';
+
 
 
 
@@ -61,6 +65,8 @@ export interface AttendanceRecord {
     date: string;
     attended: boolean;
     periodId?: string;
+    checkInTime?: string;
+    checkOutTime?: string;
 }
 
 export interface LedgerTransaction {
@@ -120,7 +126,9 @@ export interface Student {
     currentPeriodId?: string;
     ledger?: LedgerTransaction[];
     feeDiscount?: number; // Percentage discount (0-100)
+    feeExemption?: boolean;
     dailyFees?: { categoryId: string; rate: number }[];
+    pinChangeRequired?: boolean;
 }
 
 export interface InstallmentStage {
@@ -140,6 +148,7 @@ export interface AcademicPeriod {
     endDate: string;
     vacationDate?: string;
     nextTermBegins?: string;
+    schoolReopens?: string;
     installmentPlan?: InstallmentStage[];
 }
 export interface Announcement {
@@ -159,7 +168,7 @@ export interface CalendarEvent {
     description: string;
     schoolId: string;
 }
-export type StaffRole = 'Teacher' | 'Assistant Teacher' | 'Administrator' | 'Principal' | 'Accountant' | 'Secretary' | 'Security' | 'Driver' | 'Cook' | 'Cleaner' | 'Other';
+export type StaffRole = 'Teacher' | 'Assistant Teacher' | 'Administrator' | 'Principal' | 'Accountant' | 'Secretary' | 'Gatekeeper' | 'Security' | 'Cashier' | 'Driver' | 'Cook' | 'Cleaner' | 'Other';
 
 export interface StaffId {
     id: string;
@@ -178,6 +187,16 @@ export interface StaffDetails {
     id: string; // Same as StaffId
     schoolId: string;
     salary: number;
+    ssnitNumber?: string;
+    ghanaCardNumber?: string;
+    bankName?: string;
+    accountNumber?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+    address?: string;
+    dateOfHire?: string;
+    qualifications?: string;
+    contractType?: string;
 }
 export interface Expenditure {
     id: string;
@@ -186,8 +205,22 @@ export interface Expenditure {
     category: string;
     amount: number;
     schoolId: string;
-    type: 'General' | 'Feeding' | 'Transportation';
+    type?: string;
     periodId?: string;
+}
+export interface BudgetCategory {
+    id: string;
+    name: string;
+    allocatedAmount: number;
+}
+export interface Budget {
+    id: string;
+    schoolId: string;
+    periodId: string;
+    categories: BudgetCategory[];
+    totalIncomeExpected: number;
+    createdAt: Date;
+    updatedAt: Date;
 }
 export interface Debt {
     id: string;
@@ -234,9 +267,41 @@ export interface School {
     hubtelMerchantNumber?: string;
     sendexaApiKey?: string;
     sendexaVoiceCallerId?: string;
+    arkeselApiKey?: string;
+    arkeselVoiceCallerId?: string;
     currentPeriodId?: string;
     settingsPin?: string;
+    customFeeBlockMessage?: string;
 }
+
+export interface Parent {
+    id?: string;
+    name: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+    preferredVoiceLanguage?: string;
+    schoolId: string;
+    pin?: string;
+    pinChangeRequired?: boolean;
+}
+
+export interface AdmissionBillConfig {
+    id?: string;
+    schoolId: string;
+    className: string;
+    categories: any[];
+    extraItems?: any[];
+    feedingText?: string;
+    remedyText?: string;
+    paymentModeText?: string;
+    notesText?: string;
+    footerText?: string;
+    updatedAt?: any;
+}
+
 
 // --- STUDENT REPORT INTERFACES ---
 export interface ReportSubject {
@@ -280,6 +345,7 @@ export interface StudentReport {
   academicYear: string;
   term: string;
   className: string;
+  reportType?: string;
   
   attendance: {
     daysOpened: number;
@@ -290,11 +356,16 @@ export interface StudentReport {
   subjects: ReportSubject[];
   skills: ReportSkills;
   affectiveSkills: ReportAffectiveSkills;
+  preschoolPersonalDevelopment?: any;
+  preschoolPsychomotorSkills?: any;
+  healthRecord?: any;
   
   remarks: {
     teacherRemark: string;
     headTeacherRemark: string;
   };
+  
+  nextTermInfo?: any;
   
   promotion: {
     promotedTo: string;
@@ -384,6 +455,67 @@ const convertTimestampToDate = (timestamp: any): Date => {
 
 
 // --- DATA ACCESS & MUTATION FUNCTIONS ---
+
+export async function getParents(db: Firestore, schoolId: string): Promise<Parent[]> {
+  if (!schoolId) return [];
+  const parentsCol = collection(db, parentsCollection);
+  
+  const q = query(parentsCol, where("schoolId", "==", schoolId.toUpperCase()));
+  
+  const snapshot = await getDocs(q).catch(serverError => {
+      if (serverError.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+              path: parentsCol.path,
+              operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+          throw permissionError;
+      }
+      throw serverError;
+  });
+  
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Parent));
+}
+
+export async function addParent(db: Firestore, auth: Auth, schoolId: string, parentData: Omit<Parent, 'id' | 'schoolId'>): Promise<string> {
+    if (!schoolId) throw new Error("School ID missing.");
+    const parentsCol = collection(db, parentsCollection);
+    const newParentRef = doc(parentsCol);
+    
+    const newParentForFirestore = {
+        ...parentData,
+        schoolId: schoolId.toUpperCase(),
+        pin: '1234',
+        pinChangeRequired: true,
+    };
+    
+    await setDoc(newParentRef, newParentForFirestore).catch(serverError => {
+        const permissionError = new FirestorePermissionError({
+            path: newParentRef.path,
+            operation: 'create',
+            requestResourceData: newParentForFirestore,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        throw permissionError;
+    });
+    
+    return newParentRef.id;
+}
+
+export async function updateParent(db: Firestore, auth: Auth, schoolId: string, parentId: string, parentData: Partial<Parent>): Promise<void> {
+    if (!schoolId || !parentId) throw new Error("School ID or Parent ID missing.");
+    const parentRef = doc(db, parentsCollection, parentId);
+    
+    await updateDoc(parentRef, parentData).catch(serverError => {
+        const permissionError = new FirestorePermissionError({
+            path: parentRef.path,
+            operation: 'update',
+            requestResourceData: parentData,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        throw permissionError;
+    });
+}
 
 export async function getStudents(db: Firestore, schoolId: string, includeArchived = false): Promise<Student[]> {
   if (!schoolId) return [];
@@ -920,7 +1052,7 @@ function safeDateString(dateInput: any): string {
 
 
 /**
- * Utility to identify if a transaction belongs to the Daily Fee ledger.
+ * Utility to identify if a transaction belongs to the Daily Recurring Fee ledger.
  * This checks the category's metadata, automated IDs, and legacy hardcoded fallbacks.
  */
 export function isDailyTransaction(t: LedgerTransaction, categories: FeeCategory[]) {
@@ -958,6 +1090,75 @@ export function isDailyCategory(cat: FeeCategory): boolean {
     const catValue = String(cat.name || "").toLowerCase().trim();
     const markers = ['feeding', 'daily', 'canteen', 'extra classes', 'late feeding'];
     return markers.some(m => catValue.includes(m));
+}
+
+export function calculateStudentTotalBalance(student: Student, periods: AcademicPeriod[], selectedPeriodId: string | undefined, feeCategories: FeeCategory[]) {
+    const fullLedger = (student.ledger || []).filter((t)=>!t.isVoided);
+    // Match Admin Portal's Period Sorting and Indexing
+    const sortedPeriodsForIndex = [
+        ...(periods || [])
+    ].reverse();
+    const currentPeriodIndex = selectedPeriodId ? sortedPeriodsForIndex.findIndex((p)=>p.id === selectedPeriodId) : 0;
+    // Split ledger into Daily and Main
+    const dailyLedger = fullLedger.filter((t)=>isDailyTransaction(t, feeCategories));
+    const mainLedger = fullLedger.filter((t)=>!isDailyTransaction(t, feeCategories));
+    
+    const getPeriodBalances = (ledger: LedgerTransaction[])=>{
+        const prevTransactions = selectedPeriodId ? ledger.filter((t)=>{
+            if (!t.periodId) return false;
+            const tPeriodIndex = sortedPeriodsForIndex.findIndex((p)=>p.id === t.periodId);
+            return tPeriodIndex < currentPeriodIndex && t.periodId !== selectedPeriodId;
+        }) : [];
+        const bf = prevTransactions.reduce((sum, t)=>sum + (Number(t.debit) || 0) - (Number(t.credit) || 0), 0);
+        const currentTransactions = ledger.filter((t)=>!selectedPeriodId || t.periodId === selectedPeriodId);
+        const billed = currentTransactions.reduce((sum, t)=>sum + (Number(t.debit) || 0), 0);
+        const paid = currentTransactions.reduce((sum, t)=>sum + (Number(t.credit) || 0), 0);
+        const adminBilled = (bf > 0 ? bf : 0) + billed;
+        const adminPaid = (bf < 0 ? Math.abs(bf) : 0) + paid;
+        const balance = adminBilled - adminPaid;
+        return {
+            bf,
+            billed,
+            paid,
+            balance,
+            currentTransactions
+        };
+    };
+    
+    const dailyData = getPeriodBalances(dailyLedger);
+    const mainData = getPeriodBalances(mainLedger);
+    
+    // Attendance-based daily accrued (Source of Truth)
+    const attendance = student.attendance || [];
+    let dailyAccruedInfo = 0;
+    const daysPresentInPeriod = attendance.filter((a)=>a.attended && (!selectedPeriodId || a.periodId === selectedPeriodId)).length;
+    const dailyDebtByCategory: Record<string, number> = {};
+    
+    feeCategories.filter(isDailyCategory).forEach((cat)=>{
+        const normId = cat.id;
+        // Find student's assigned rate for this category
+        const studentRate = (student.dailyFees || []).find((f)=>f.categoryId === normId || f.categoryId === normId.toLowerCase())?.rate || 0;
+        const amount = daysPresentInPeriod * Number(studentRate);
+        if (amount > 0) {
+            dailyAccruedInfo += amount;
+            dailyDebtByCategory[normId] = amount;
+        }
+        // Add historical ledger debt for this category
+        const catLedger = dailyLedger.filter((t)=>t.categoryId === normId || (t.category && t.category.toLowerCase() === cat.name.toLowerCase()));
+        const catData = getPeriodBalances(catLedger);
+        dailyDebtByCategory[normId] = (dailyDebtByCategory[normId] || 0) + catData.balance;
+    });
+    
+    // Total = (Main Balance) + (Daily Balance from ledger + Daily Accrued from attendance)
+    const totalOutstanding = mainData.balance + dailyData.balance + dailyAccruedInfo;
+    
+    return {
+        mainData,
+        dailyData,
+        dailyAccruedInfo,
+        totalOutstanding,
+        dailyDebtByCategory
+    };
 }
 
 export function calculateInstallmentExpectedAmount(
@@ -1036,8 +1237,12 @@ export function calculateInstallmentOutstandingBalance(
     };
 }
 
-export async function postLedgerTransaction(db: Firestore, auth: Auth, idOrStudentId: string, transaction: Omit<LedgerTransaction, 'id' | 'recordedBy'> & { categoryId?: string }, schoolId?: string) {
-    const user = await ensureUserAuthenticated(auth);
+export async function postLedgerTransaction(db: Firestore, auth: Auth | null, idOrStudentId: string, transaction: Omit<LedgerTransaction, 'id' | 'recordedBy'> & { categoryId?: string, recordedBy?: string }, schoolId?: string) {
+    let recordedByUid = transaction.recordedBy || 'Unknown';
+    if (auth) {
+        const user = await ensureUserAuthenticated(auth);
+        recordedByUid = user.uid;
+    }
     
     const { ref: finalDocRef, snap: studentSnap } = await resolveStudentDoc(db, idOrStudentId, schoolId);
     const student = studentSnap.data() as Student;
@@ -1046,8 +1251,8 @@ export async function postLedgerTransaction(db: Firestore, auth: Auth, idOrStude
         ...transaction,
         categoryId: transaction.categoryId || (transaction as any).category, // NEW: Ensure ID is preserved
         date: safeDateString(transaction.date),
-        id: Date.now().toString(),
-        recordedBy: user.uid
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        recordedBy: recordedByUid
     };
 
     // Safety: Remove undefined fields that crash Firestore
@@ -2145,9 +2350,78 @@ export async function getExpenditures(db: Firestore, schoolId: string, periodId?
     return expenditures.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
+export async function getBudgetForPeriod(db: Firestore, schoolId: string, periodId: string): Promise<Budget | null> {
+    if (!schoolId || !periodId) return null;
+    const budgetsCol = collection(db, budgetsCollection);
+    const q = query(budgetsCol, where('schoolId', '==', schoolId.toUpperCase()), where('periodId', '==', periodId));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return null;
+    const docSnap = snapshot.docs[0];
+    const data = docSnap.data();
+    return {
+        id: docSnap.id,
+        ...data,
+        createdAt: convertTimestampToDate(data.createdAt),
+        updatedAt: convertTimestampToDate(data.updatedAt)
+    } as Budget;
+}
+
+export async function saveBudget(db: Firestore, auth: Auth, schoolId: string, budget: Omit<Budget, 'id' | 'schoolId' | 'createdAt' | 'updatedAt'>) {
+    if (!schoolId) throw new Error("School ID missing.");
+    await ensureUserAuthenticated(auth);
+    const budgetsCol = collection(db, budgetsCollection);
+    
+    const q = query(budgetsCol, where('schoolId', '==', schoolId.toUpperCase()), where('periodId', '==', budget.periodId));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+        const docRef = snapshot.docs[0].ref;
+        await updateDoc(docRef, {
+            ...budget,
+            updatedAt: serverTimestamp()
+        });
+        return docRef.id;
+    } else {
+        const docRef = doc(budgetsCol);
+        await setDoc(docRef, {
+            ...budget,
+            schoolId: schoolId.toUpperCase(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        });
+        return docRef.id;
+    }
+}
+
 export async function addExpenditure(db: Firestore, auth: Auth, schoolId: string, expenditure: Omit<Expenditure, 'id' | 'schoolId'>) {
     if (!schoolId) throw new Error("School ID missing.");
     await ensureUserAuthenticated(auth);
+
+    if (expenditure.periodId && expenditure.category) {
+        const budgetsCol = collection(db, budgetsCollection);
+        const q = query(budgetsCol, where('schoolId', '==', schoolId.toUpperCase()), where('periodId', '==', expenditure.periodId));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+            const budgetData = snapshot.docs[0].data();
+            const categoryBudget = budgetData.categories?.find((c: any) => c.name === expenditure.category || c.id === expenditure.category);
+            
+            if (categoryBudget && categoryBudget.allocatedAmount > 0) {
+                const expenditureCol = collection(db, expenditureCollection);
+                const exQ = query(expenditureCol, where('schoolId', '==', schoolId.toUpperCase()), where('periodId', '==', expenditure.periodId), where('category', '==', expenditure.category));
+                const exSnap = await getDocs(exQ);
+                let currentSpent = 0;
+                exSnap.forEach(doc => {
+                    currentSpent += Number(doc.data().amount || 0);
+                });
+                
+                const amountToAdd = Number(expenditure.amount || 0);
+                if (currentSpent + amountToAdd > categoryBudget.allocatedAmount) {
+                    throw new Error(`Budget exceeded for category '${expenditure.category}'. Allocated: GHS ${categoryBudget.allocatedAmount}, Current spent: GHS ${currentSpent}, Attempting to add: GHS ${amountToAdd}.`);
+                }
+            }
+        }
+    }
+
     const expenditureCol = collection(db, expenditureCollection);
     const expenditureData = {
         ...expenditure,
@@ -2421,6 +2695,7 @@ export async function getSchoolDetails(db: Firestore, schoolId: string): Promise
         return {
             id: docSnap.id,
             ...data,
+            name: data.name || data.schoolName || '',
             dateCreated: convertTimestampToDate(data.dateCreated),
         } as School;
     }
@@ -2697,7 +2972,7 @@ export const reconcileDailyFees = async (db: any, auth: any, studentId: string, 
 
     // --- LEDGER CLEANUP LOGIC ---
     // Instead of adding missing fees, we now REMOVE all automated and historical accrual entries.
-    // This restores the ledger to only contain manual charges and payments, as daily fees
+    // This restores the ledger to only contain manual charges and payments, as daily recurring fees
     // are now calculated dynamically from attendance data.
     const initialCount = newLedger.length;
     newLedger = newLedger.filter(t => {
@@ -2722,3 +2997,284 @@ export const reconcileDailyFees = async (db: any, auth: any, studentId: string, 
 
     return changed;
 };
+
+const admissionBillsCollection = 'admissionBills';
+
+export async function getAdmissionBill(db: Firestore, schoolId: string, className: string): Promise<AdmissionBillConfig | null> {
+    try {
+        const docId = `${schoolId}_${className.trim().toUpperCase()}`;
+        const docRef = doc(db, admissionBillsCollection, docId);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+            return { id: docSnap.id, ...docSnap.data() } as AdmissionBillConfig;
+        }
+        return null;
+    } catch (error) {
+        console.error('Error fetching admission bill:', error);
+        throw error;
+    }
+}
+
+export async function saveAdmissionBill(db: Firestore, config: AdmissionBillConfig): Promise<void> {
+    try {
+        const docId = `${config.schoolId}_${config.className.trim().toUpperCase()}`;
+        const docRef = doc(db, admissionBillsCollection, docId);
+        await setDoc(docRef, {
+            ...config,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    } catch (error) {
+        console.error('Error saving admission bill:', error);
+        throw error;
+    }
+}
+
+export async function uploadAdmissionBillPdf(storage: FirebaseStorage, schoolId: string, className: string, pdfBlob: Blob): Promise<string> {
+    const cleanClassName = className.replace(/[^a-zA-Z0-9]/g, '_');
+    const storagePath = `admission_bills/${schoolId}/${cleanClassName}_${Date.now()}.pdf`;
+    const fileRef = ref(storage, storagePath);
+    await uploadBytes(fileRef, pdfBlob, { contentType: 'application/pdf' });
+    return await getDownloadURL(fileRef);
+}
+
+export async function uploadTermBillPdf(storage: FirebaseStorage, schoolId: string, termLabel: string, studentId: string, pdfBlob: Blob): Promise<string> {
+    const cleanTerm = termLabel.replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanStudent = studentId.replace(/[^a-zA-Z0-9]/g, '_');
+    const storagePath = `term_bills/${schoolId}/${cleanTerm}/${cleanStudent}_${Date.now()}.pdf`;
+    const fileRef = ref(storage, storagePath);
+    await uploadBytes(fileRef, pdfBlob, { contentType: 'application/pdf' });
+    return await getDownloadURL(fileRef);
+}
+
+// --- Authentication & Security ---
+
+export async function verifyLogin(db: Firestore, schoolId: string, userId: string, pin: string): Promise<{ type: 'student' | 'parent', data: any } | null> {
+    const trimmedId = userId.trim().toUpperCase();
+    const trimmedSchoolId = schoolId.trim().toUpperCase();
+    
+    // First, try resolving as student
+    try {
+        const student = await resolveStudentDoc(db, trimmedId, trimmedSchoolId);
+        const studentData = student.snap.data();
+        const storedPin = (studentData && studentData.pin) || '1234';
+        if (storedPin === pin) {
+            return { type: 'student', data: { id: student.snap.id, ...studentData } };
+        } else {
+            throw new Error('Incorrect PIN.');
+        }
+    } catch (e) {
+        if ((e as any).message === 'Incorrect PIN.') throw e;
+        
+        // If not student, try as parent
+        const parentDocRef = doc(db, parentsCollection, trimmedId);
+        const parentSnap = await getDoc(parentDocRef);
+        
+        if (parentSnap.exists()) {
+            const parent = { id: parentSnap.id, ...parentSnap.data() } as Parent;
+            if (parent.schoolId === trimmedSchoolId) {
+                const storedPin = parent.pin || '1234';
+                if (storedPin === pin) {
+                    return { type: 'parent', data: parent };
+                } else {
+                    throw new Error('Incorrect PIN.');
+                }
+            }
+        }
+    }
+    
+    throw new Error('Invalid ID or PIN.');
+}
+
+export async function updatePin(db: Firestore, schoolId: string, userId: string, isStudent: boolean, newPin: string): Promise<void> {
+    
+    if (isStudent) {
+        const trimmedId = userId.trim().toUpperCase();
+        const studentsRef = collection(db, studentsCollection);
+        let docRef: any = null;
+        
+        const directSnap = await getDoc(doc(db, studentsCollection, trimmedId));
+        if (directSnap.exists() && directSnap.data().schoolId === schoolId) docRef = directSnap.ref;
+        
+        if (!docRef) {
+            const compositeId = `${schoolId}_${trimmedId}`;
+            const compSnap = await getDoc(doc(db, studentsCollection, compositeId));
+            if (compSnap.exists()) docRef = compSnap.ref;
+        }
+        
+        if (!docRef) {
+            const q = query(studentsRef, where('schoolId', '==', schoolId), where('studentId', '==', trimmedId));
+            const querySnap = await getDocs(q);
+            if (!querySnap.empty) docRef = querySnap.docs[0].ref;
+        }
+        
+        if (!docRef) throw new Error('Student not found');
+        
+        await updateDoc(docRef, { pin: newPin, pinChangeRequired: false });
+    } else {
+        const trimmedId = userId.trim();
+        const parentDocRef = doc(db, parentsCollection, trimmedId);
+        await updateDoc(parentDocRef, { pin: newPin, pinChangeRequired: false });
+    }
+}
+
+// --- RESTORED MISSING FUNCTIONS ---
+
+export async function getStudentsByParentPhone(db: Firestore, schoolId: string, parentPhone: string): Promise<Student[]> {
+    if (!schoolId || !parentPhone) return [];
+    const studentsCol = collection(db, studentsCollection);
+    const q = query(studentsCol, where("schoolId", "==", schoolId.toUpperCase()), where("parentPhone", "==", parentPhone));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
+}
+
+export async function getAllStudentReports(db: Firestore, schoolId: string, studentId: string): Promise<StudentReport[]> {
+    if (!schoolId || !studentId) return [];
+    const reportsCol = collection(db, 'studentReports');
+    const q = query(reportsCol, where("schoolId", "==", schoolId.toUpperCase()), where("studentId", "==", studentId.toUpperCase()));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as StudentReport));
+}
+
+export interface LibraryResource {
+    id: string;
+    schoolId: string;
+    className: string;
+    title: string;
+    description: string;
+    type: string;
+    fileUrl: string;
+    dateAdded?: any;
+}
+
+export async function getLibraryResourcesForClass(db: Firestore, schoolId: string, className: string): Promise<LibraryResource[]> {
+    if (!schoolId || !className) return [];
+    const resCol = collection(db, 'libraryResources');
+    const q = query(resCol, where("schoolId", "==", schoolId.toUpperCase()), where("className", "==", className.toUpperCase()));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LibraryResource));
+}
+
+export async function addLibraryResource(db: Firestore, auth: any, schoolId: string, data: Omit<LibraryResource, 'id' | 'schoolId'>): Promise<string> {
+    const resCol = collection(db, 'libraryResources');
+    const newRef = doc(resCol);
+    await setDoc(newRef, { ...data, schoolId: schoolId.toUpperCase() });
+    return newRef.id;
+}
+
+export async function deleteLibraryResource(db: Firestore, auth: any, id: string): Promise<void> {
+    const resRef = doc(db, 'libraryResources', id);
+    await deleteDoc(resRef);
+}
+
+export interface LessonPlanRecord {
+    id: string;
+    schoolId: string;
+    staffId: string;
+    staffName?: string;
+    className: string;
+    subject: string;
+    topic: string;
+    week: string;
+    content: string;
+    status: string;
+    feedback?: string;
+    dateAdded?: any;
+    lastUpdated?: any;
+}
+
+export async function getLessonPlans(db: Firestore, schoolId: string, staffId?: string): Promise<LessonPlanRecord[]> {
+    if (!schoolId) return [];
+    const lpCol = collection(db, 'lessonPlans');
+    let q = query(lpCol, where("schoolId", "==", schoolId.toUpperCase()));
+    if (staffId) {
+        q = query(lpCol, where("schoolId", "==", schoolId.toUpperCase()), where("staffId", "==", staffId));
+    }
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LessonPlanRecord));
+}
+
+export async function addLessonPlan(db: Firestore, auth: any, schoolId: string, data: Omit<LessonPlanRecord, 'id' | 'schoolId'>): Promise<string> {
+    const lpCol = collection(db, 'lessonPlans');
+    const newRef = doc(lpCol);
+    await setDoc(newRef, { ...data, schoolId: schoolId.toUpperCase() });
+    return newRef.id;
+}
+
+export async function updateLessonPlan(db: Firestore, auth: any, id: string, data: Partial<LessonPlanRecord>): Promise<void> {
+    const resRef = doc(db, 'lessonPlans', id);
+    await updateDoc(resRef, data);
+}
+
+export async function deleteLessonPlan(db: Firestore, auth: any, id: string): Promise<void> {
+    const resRef = doc(db, 'lessonPlans', id);
+    await deleteDoc(resRef);
+}
+
+export async function markStudentAttendanceQR(
+    db: Firestore, 
+    auth: any, 
+    studentId: string, 
+    schoolId: string, 
+    type: 'in' | 'out', 
+    date: string, 
+    time: string, 
+    periodId: string
+): Promise<{ alreadyScanned?: boolean } | void> {
+    const { ref: studentDocRef, snap: studentSnap } = await resolveStudentDoc(db, studentId, schoolId);
+    
+    const student = studentSnap.data() as Student | undefined;
+    if (!student) {
+        throw new Error("Student data not found.");
+    }
+
+    let newAttendance = student.attendance || [];
+    const existingRecordIndex = newAttendance.findIndex(a => a.date === date);
+
+    if (existingRecordIndex > -1) {
+        const record = newAttendance[existingRecordIndex];
+        
+        if (type === 'in') {
+            if (record.checkInTime) {
+                return { alreadyScanned: true };
+            }
+            record.attended = true;
+            record.checkInTime = time;
+            if (periodId) record.periodId = periodId;
+        } else if (type === 'out') {
+            if (record.checkOutTime) {
+                return { alreadyScanned: true };
+            }
+            record.checkOutTime = time;
+        }
+    } else {
+        newAttendance.push({
+            id: Date.now(),
+            date,
+            attended: true, // Assuming check-in/out implies they attended
+            periodId,
+            ...(type === 'in' ? { checkInTime: time } : { checkOutTime: time })
+        });
+    }
+
+    newAttendance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const updateData = { attendance: newAttendance };
+
+    await updateDoc(studentDocRef, updateData).catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: studentDocRef.path,
+            operation: 'update',
+            requestResourceData: updateData,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        throw permissionError;
+    });
+
+    return {};
+}
+
+export async function updateStaffDetails(db: Firestore, auth: any, schoolId: string, staffId: string, data: any): Promise<void> {
+    const resRef = doc(db, 'staffDetails', staffId);
+    await updateDoc(resRef, data);
+}

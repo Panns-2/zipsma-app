@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Users, Landmark, Loader2, CheckCircle2, Search } from 'lucide-react';
-import { Student, FeeCategory, postBulkParentAutoDistributedPayment, calculateDailyOutstanding } from '@/lib/data-store';
+import { Student, FeeCategory, AcademicPeriod, postBulkParentAutoDistributedPayment, calculateStudentTotalBalance } from '@/lib/data-store';
 import { useToast } from '@/hooks/use-toast';
 import { Auth } from 'firebase/auth';
 import { Firestore } from 'firebase/firestore';
@@ -23,6 +23,7 @@ interface ParentBulkPaymentModalProps {
     db: Firestore;
     auth: Auth;
     periodId?: string;
+    periods: AcademicPeriod[];
     onSuccess: () => void;
 }
 
@@ -35,6 +36,7 @@ export const ParentBulkPaymentModal: React.FC<ParentBulkPaymentModalProps> = ({
     db,
     auth,
     periodId,
+    periods,
     onSuccess
 }) => {
     const { toast } = useToast();
@@ -57,14 +59,18 @@ export const ParentBulkPaymentModal: React.FC<ParentBulkPaymentModalProps> = ({
     // Extract unique parents
     const parents = useMemo(() => {
         const parentMap = new Map<string, { id: string, phone: string, name: string, childrenCount: number }>();
+        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
         students.forEach(s => {
-            const pId = s.parentPhone || s.parentId || s.parentName; // Prefer phone as unique ID
+            const pId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
             if (pId) {
                 if (!parentMap.has(pId)) {
-                    parentMap.set(pId, { id: pId, phone: s.parentPhone || '', name: s.parentName || 'Unknown Parent', childrenCount: 1 });
+                    parentMap.set(pId, { id: pId, phone: s.parentPhone || '', name: s.parentName || `Parent of ${s.name}`, childrenCount: 1 });
                 } else {
                     const p = parentMap.get(pId)!;
                     p.childrenCount++;
+                    if (!s.parentName && p.name.startsWith('Parent of ') && !p.name.includes(' and Sibling(s)')) {
+                        p.name += ' and Sibling(s)';
+                    }
                 }
             }
         });
@@ -105,9 +111,10 @@ export const ParentBulkPaymentModal: React.FC<ParentBulkPaymentModalProps> = ({
         });
 
         // 2. Search Students
+        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
         students.forEach(s => {
             if (s.name.toLowerCase().includes(q) || (s.studentId && s.studentId.toLowerCase().includes(q))) {
-                const pId = s.parentPhone || s.parentId || s.parentName;
+                const pId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
                 if (pId && !addedParentIds.has(pId)) {
                     const p = parents.find(parent => parent.id === pId);
                     if (p) {
@@ -130,11 +137,11 @@ export const ParentBulkPaymentModal: React.FC<ParentBulkPaymentModalProps> = ({
 
     const selectedChildren = useMemo(() => {
         if (!selectedParentId) return [];
-        return students.filter(s => 
-            (s.parentPhone && s.parentPhone === selectedParentId) || 
-            (s.parentId && s.parentId === selectedParentId) || 
-            (s.parentName && s.parentName === selectedParentId)
-        );
+        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
+        return students.filter(s => {
+            const pId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
+            return pId === selectedParentId;
+        });
     }, [students, selectedParentId]);
 
     const childrenDebts = useMemo(() => {
@@ -143,18 +150,20 @@ export const ParentBulkPaymentModal: React.FC<ParentBulkPaymentModalProps> = ({
         
         selectedChildren.forEach(student => {
             const studentDailyCategories = feeCategories.filter(c => c.isDaily);
+            const balanceInfo = calculateStudentTotalBalance(student, periods, periodId, feeCategories);
+            
             studentDailyCategories.forEach(cat => {
                 const rateObj = (student.dailyFees || []).find(f => f.categoryId === cat.id || f.categoryId === cat.id.toLowerCase());
                 const rate = Number(rateObj?.rate) || 0;
                 
-                const debt = calculateDailyOutstanding(student, cat.id, feeCategories);
+                const debt = balanceInfo.dailyDebtByCategory[cat.id] || 0;
                 if (debt > 0 || rate > 0) {
                     debts.push({ student, categoryId: cat.id, categoryName: cat.name, debt, dailyRate: rate });
                 }
             });
         });
         return debts;
-    }, [selectedChildren, feeCategories]);
+    }, [selectedChildren, feeCategories, periods, periodId]);
 
     const totalDebt = useMemo(() => childrenDebts.reduce((sum, item) => sum + Math.max(0, item.debt), 0), [childrenDebts]);
 
@@ -237,7 +246,7 @@ export const ParentBulkPaymentModal: React.FC<ParentBulkPaymentModalProps> = ({
                         Parent Bulk Payment
                     </DialogTitle>
                     <DialogDescription className="text-indigo-100 font-medium">
-                        Record a lump sum payment from a parent. The system will automatically distribute it across all their children to clear daily fee debts.
+                        Record a lump sum payment from a parent. The system will automatically distribute it across all their children to clear daily recurring fee debts.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -361,7 +370,7 @@ export const ParentBulkPaymentModal: React.FC<ParentBulkPaymentModalProps> = ({
                                         </table>
                                     </div>
                                     <p className="text-[10px] text-slate-500 font-medium italic">
-                                        * Payments are applied to debts first. Any leftover amount is distributed proportionally based on each child's daily fee rates.
+                                        * Payments are applied to debts first. Any leftover amount is distributed proportionally based on each child's daily recurring fee rates.
                                     </p>
                                 </div>
                             )}

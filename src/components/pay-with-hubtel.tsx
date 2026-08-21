@@ -14,6 +14,10 @@ interface PayWithHubtelProps extends ButtonProps {
   schoolId: string;
   periodId: string;
   description?: string;
+  feeType?: 'daily' | 'main' | 'mixed'; // indicates what type of fee is being paid
+  isBulk?: boolean;
+  parentId?: string;
+  bulkDistribution?: { studentId: string, amount: number }[];
   onInitialize?: () => void;
   children: React.ReactNode;
 }
@@ -26,6 +30,10 @@ const PayWithHubtel: React.FC<PayWithHubtelProps> = ({
   schoolId,
   periodId,
   description,
+  feeType,
+  isBulk,
+  parentId,
+  bulkDistribution,
   onInitialize,
   children,
   ...props
@@ -54,6 +62,10 @@ const PayWithHubtel: React.FC<PayWithHubtelProps> = ({
           schoolId,
           periodId,
           description,
+          feeType,
+          isBulk,
+          parentId,
+          bulkDistribution,
         }),
       });
 

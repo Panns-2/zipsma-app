@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import FirebaseErrorListener from '@/components/FirebaseErrorListener';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { FloatingChatWidget } from '@/components/floating-chat-widget';
+import { InstallPWA } from '@/components/install-pwa';
 
 const outfit = Outfit({ subsets: ['latin'], variable: '--font-sans' });
 const robotoMono = Roboto_Mono({ subsets: ['latin'], variable: '--font-mono' });
@@ -12,6 +13,7 @@ const robotoMono = Roboto_Mono({ subsets: ['latin'], variable: '--font-mono' });
 export const metadata: Metadata = {
   title: 'ZipSMA',
   description: 'School Management App',
+  manifest: '/manifest.json',
   icons: {
     icon: '/icons/icon-192x192.png',
     apple: '/icons/apple-touch-icon.png',
@@ -34,6 +36,7 @@ export default function RootLayout({
           <FirebaseErrorListener />
           {children}
           <FloatingChatWidget />
+          <InstallPWA />
           <Toaster />
         </FirebaseClientProvider>
       </body>

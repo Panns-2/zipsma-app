@@ -58,7 +58,11 @@ export default function RegisterPage() {
               </p>
             </div>
             
-            <RegisterSchoolForm />
+            {/* <RegisterSchoolForm /> */}
+            <div className="bg-primary/10 border border-primary text-primary p-6 rounded-xl text-center shadow-sm">
+              <h3 className="text-xl font-bold mb-2">New school registration opening soon!</h3>
+              <p className="text-muted-foreground text-sm">We are preparing the system for public access. Please check back later.</p>
+            </div>
 
             <div className="mt-8 text-center text-sm text-muted-foreground">
               <p>Already have an account? <Link href="/" className="font-semibold text-primary hover:underline">Admin Login</Link></p>

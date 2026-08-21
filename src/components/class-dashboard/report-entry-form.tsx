@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Save, Calculator, X, Sparkles, Wand2 } from 'lucide-react';
+import { Loader2, Save, Calculator, X, Sparkles, Wand2, Plus } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface ReportEntryFormProps {
@@ -45,11 +45,14 @@ function getDefaultRemark(grade: string): string {
   }
 }
 
+const isPreschoolClass = (name: string) => /kg|nursery|creche|pre-school|preschool/i.test(name);
+
 export function ReportEntryForm({ student, schoolId, className, settings, onClose, onSaveComplete }: ReportEntryFormProps) {
   const { db, auth } = useFirebase();
   const { toast } = useToast();
   
   const [report, setReport] = useState<Partial<StudentReport>>({});
+  const isPreschool = report.reportType === 'preschool';
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('attendance');
@@ -73,9 +76,22 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
         setCurrentPeriodId(activePeriod.id);
         
         const existingReport = await getStudentReport(db, schoolId, student.studentId, activePeriod.id);
-        
+        const outstandingFees = (student.ledger || []).reduce((acc, t) => acc + (Number(t.debit) || 0) - (Number(t.credit) || 0), 0);
+        const defaultNextTermInfo = {
+          begins: activePeriod.nextTermBegins || '',
+          reopens: activePeriod.schoolReopens || '',
+          feesOutstanding: outstandingFees.toString()
+        };
+
         if (existingReport) {
-          setReport(existingReport);
+          setReport({
+            ...existingReport,
+            nextTermInfo: {
+              begins: existingReport.nextTermInfo?.begins || defaultNextTermInfo.begins,
+              reopens: existingReport.nextTermInfo?.reopens || defaultNextTermInfo.reopens,
+              feesOutstanding: existingReport.nextTermInfo?.feesOutstanding || defaultNextTermInfo.feesOutstanding
+            }
+          });
         } else {
           // Initialize new report based on settings
           let defaultSubjects: ReportSubject[] = [];
@@ -106,6 +122,7 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
             academicYear: activePeriod.year,
             term: activePeriod.term,
             className,
+            reportType: isPreschoolClass(className) ? 'preschool' : 'standard' as 'standard' | 'preschool',
             attendance: { daysOpened, daysPresent, daysAbsent },
             subjects: defaultSubjects,
             skills: {},
@@ -113,6 +130,7 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
             remarks: { teacherRemark: '', headTeacherRemark: '' },
             promotion: { promotedTo: '', isRepeated: false },
             summary: { totalMarks: 0, averageScore: 0, classPosition: '', classSize: 0, highestInClass: 0, lowestInClass: 0 },
+            nextTermInfo: defaultNextTermInfo,
             isLocked: false
           });
         }
@@ -133,7 +151,9 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
       newSubjects[index] = { ...newSubjects[index], [field]: value };
       
       // Auto-calculate total and grade if CA or Exam changes
-      if (field === 'classAssessmentScore' || field === 'examScore') {
+      if (field === 'grade' && isPreschool) {
+        newSubjects[index].remark = getDefaultRemark(value);
+      } else if (field === 'classAssessmentScore' || field === 'examScore') {
         const ca = Number(newSubjects[index].classAssessmentScore) || 0;
         const exam = Number(newSubjects[index].examScore) || 0;
         const total = ca + exam;
@@ -143,6 +163,31 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
         newSubjects[index].remark = getDefaultRemark(grade);
       }
       
+      return { ...prev, subjects: newSubjects };
+    });
+  };
+
+  const handleAddSubject = () => {
+    setReport(prev => ({
+      ...prev,
+      subjects: [
+        ...(prev.subjects || []),
+        {
+          name: '',
+          classAssessmentScore: 0,
+          examScore: 0,
+          totalScore: 0,
+          grade: '',
+          remark: ''
+        }
+      ]
+    }));
+  };
+
+  const handleRemoveSubject = (index: number) => {
+    setReport(prev => {
+      const newSubjects = [...(prev.subjects || [])];
+      newSubjects.splice(index, 1);
       return { ...prev, subjects: newSubjects };
     });
   };
@@ -223,7 +268,7 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
       // Auto-calculate summary before saving
       handleCalculateSummary();
       
-      const reportId = `${schoolId}_${report.academicYear}_${report.term}_${className}_${student.studentId}`.replace(/\s+/g, '_').toLowerCase();
+      const reportId = `${schoolId}_${report.academicYear}_${report.term}_${className}_${student.studentId}`.replace(/[\s\/]+/g, '_').toLowerCase();
       
       const fullReport: StudentReport = {
         ...report,
@@ -231,6 +276,7 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
         studentId: student.studentId,
         schoolId,
         className,
+            reportType: isPreschoolClass(className) ? 'preschool' : 'standard' as 'standard' | 'preschool',
         lastUpdated: new Date()
       } as StudentReport;
       
@@ -239,7 +285,7 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
       onSaveComplete();
     } catch (error) {
       console.error("Save error:", error);
-      toast({ title: "Error", description: "Failed to save the report.", variant: "destructive" });
+      toast({ title: "Error", description: `Failed to save: ${error instanceof Error ? error.message : JSON.stringify(error)}`, variant: "destructive" });
     } finally {
       setIsSaving(false);
     }
@@ -263,11 +309,12 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
         ) : (
           <div className="mt-4">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid grid-cols-4 mb-4">
+              <TabsList className={`grid ${isPreschool ? 'grid-cols-5' : 'grid-cols-4'} mb-4`}>
                 <TabsTrigger value="attendance">Attendance</TabsTrigger>
                 <TabsTrigger value="subjects">Subjects & Grades</TabsTrigger>
                 <TabsTrigger value="skills">Skills & Behaviour</TabsTrigger>
                 <TabsTrigger value="remarks">Remarks</TabsTrigger>
+                {isPreschool && <TabsTrigger value="health">Health Record</TabsTrigger>}
               </TabsList>
               
               <TabsContent value="attendance" className="space-y-4">
@@ -301,7 +348,10 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
               </TabsContent>
               
               <TabsContent value="subjects" className="space-y-4">
-                <div className="flex justify-end mb-2">
+                <div className="flex justify-between items-center mb-2">
+                  <Button variant="outline" size="sm" onClick={handleAddSubject} className="border-dashed">
+                    <Plus className="w-4 h-4 mr-2" /> Add Subject
+                  </Button>
                   <Button variant="outline" size="sm" onClick={handleCalculateSummary}>
                     <Calculator className="w-4 h-4 mr-2" /> Calculate Totals
                   </Button>
@@ -311,50 +361,93 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
                     <thead className="bg-gray-50 text-gray-700">
                       <tr>
                         <th className="px-4 py-2 font-medium">Subject</th>
-                        <th className="px-4 py-2 font-medium w-24">CA (50)</th>
-                        <th className="px-4 py-2 font-medium w-24">Exam (50)</th>
-                        <th className="px-4 py-2 font-medium w-24">Total</th>
-                        <th className="px-4 py-2 font-medium w-20">Grade</th>
+                        {!isPreschool && <th className="px-4 py-2 font-medium w-24">CA (50)</th>}
+                        {!isPreschool && <th className="px-4 py-2 font-medium w-24">Exam (50)</th>}
+                        {!isPreschool && <th className="px-4 py-2 font-medium w-24">Total</th>}
+                        <th className="px-4 py-2 font-medium w-32">Grade</th>
                         <th className="px-4 py-2 font-medium w-32">Remark</th>
+                        <th className="px-2 py-2 font-medium w-10"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {report.subjects?.map((sub, idx) => (
-                        <tr key={idx} className="border-t">
-                          <td className="px-4 py-2 font-medium">{sub.name}</td>
-                          <td className="px-4 py-2">
-                            <Input 
-                              type="number" 
-                              max="50"
-                              className="h-8"
-                              value={sub.classAssessmentScore || ''} 
-                              onChange={e => handleSubjectChange(idx, 'classAssessmentScore', Number(e.target.value))}
-                            />
-                          </td>
-                          <td className="px-4 py-2">
-                            <Input 
-                              type="number" 
-                              max="50"
-                              className="h-8"
-                              value={sub.examScore || ''} 
-                              onChange={e => handleSubjectChange(idx, 'examScore', Number(e.target.value))}
-                            />
-                          </td>
-                          <td className="px-4 py-2 text-center font-bold">
-                            {sub.totalScore || 0}
-                          </td>
-                          <td className="px-4 py-2 text-center font-bold text-primary">
-                            {sub.grade || '-'}
-                          </td>
-                          <td className="px-4 py-2">
-                            <Input 
-                              className="h-8 text-xs"
-                              value={sub.remark || ''} 
-                              onChange={e => handleSubjectChange(idx, 'remark', e.target.value)}
-                            />
+                      {report.subjects?.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No subjects added yet. Click "Add Subject" to begin.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        report.subjects?.map((sub, idx) => (
+                          <tr key={idx} className="border-t">
+                            <td className="px-4 py-2 font-medium">
+                              <Input 
+                                className="h-8 w-full"
+                                value={sub.name}
+                                onChange={e => handleSubjectChange(idx, 'name', e.target.value)}
+                                placeholder="Subject Name"
+                              />
+                            </td>
+                            {!isPreschool && (
+                              <>
+                                <td className="px-4 py-2">
+                                  <Input 
+                                    type="number" 
+                                    max="50"
+                                    className="h-8"
+                                    value={sub.classAssessmentScore || ''} 
+                                    onChange={e => handleSubjectChange(idx, 'classAssessmentScore', Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-4 py-2">
+                                  <Input 
+                                    type="number" 
+                                    max="50"
+                                    className="h-8"
+                                    value={sub.examScore || ''} 
+                                    onChange={e => handleSubjectChange(idx, 'examScore', Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-4 py-2 text-center font-bold">
+                                  {sub.totalScore || 0}
+                                </td>
+                              </>
+                            )}
+                            <td className="px-4 py-2 text-center">
+                              {isPreschool ? (
+                                <Select 
+                                  value={sub.grade || ''}
+                                  onValueChange={(val) => handleSubjectChange(idx, 'grade', val)}
+                                >
+                                  <SelectTrigger className="h-8">
+                                    <SelectValue placeholder="Grade" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="A">A (Excellent)</SelectItem>
+                                    <SelectItem value="B">B (Very Good)</SelectItem>
+                                    <SelectItem value="C">C (Good)</SelectItem>
+                                    <SelectItem value="D">D (Developing)</SelectItem>
+                                    <SelectItem value="E">E (Needs Improv.)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="font-bold text-primary">{sub.grade || '-'}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2">
+                              <Input 
+                                className="h-8 text-xs"
+                                value={sub.remark || ''} 
+                                onChange={e => handleSubjectChange(idx, 'remark', e.target.value)}
+                              />
+                            </td>
+                            <td className="px-2 py-2 text-center">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleRemoveSubject(idx)}>
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -365,54 +458,166 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
               </TabsContent>
               
               <TabsContent value="skills" className="space-y-6">
-                 {/* Basic implementation for skills */}
-                 <div className="grid grid-cols-2 gap-6">
-                   <div className="space-y-4 border p-4 rounded-md">
-                     <h4 className="font-semibold">Core Skills</h4>
-                     {['Reading', 'Writing', 'Number Work', 'Creativity'].map(skill => (
-                       <div key={skill} className="flex justify-between items-center">
-                         <Label>{skill}</Label>
-                         <Select 
-                           value={(report.skills as any)?.[skill.toLowerCase().replace(' ', '')] || ''}
-                           onValueChange={(val) => setReport(prev => ({ ...prev, skills: { ...prev.skills, [skill.toLowerCase().replace(' ', '')]: val } }))}
-                         >
-                           <SelectTrigger className="w-[180px] h-8 text-xs">
-                             <SelectValue placeholder="Select rating" />
-                           </SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="Excellent">Excellent</SelectItem>
-                             <SelectItem value="Very Good">Very Good</SelectItem>
-                             <SelectItem value="Good">Good</SelectItem>
-                             <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
-                           </SelectContent>
-                         </Select>
-                       </div>
-                     ))}
+                 {isPreschool ? (
+                   <div className="grid grid-cols-2 gap-6">
+                     <div className="space-y-4 border p-4 rounded-md">
+                       <h4 className="font-semibold">Personal Development</h4>
+                       {['Neatness', 'Punctuality', 'Confidence', 'Participation', 'Social Interaction', 'Respect for Others', 'Self-Control', 'Independence'].map(skill => {
+                         const key = skill.toLowerCase().replace(/ /g, '') as string;
+                         return (
+                           <div key={skill} className="flex justify-between items-center">
+                             <Label className="text-xs">{skill}</Label>
+                             <Select 
+                               value={(report.preschoolPersonalDevelopment as any)?.[key] || ''}
+                               onValueChange={(val) => setReport(prev => ({ ...prev, preschoolPersonalDevelopment: { ...prev.preschoolPersonalDevelopment, [key]: val } }))}
+                             >
+                               <SelectTrigger className="w-[140px] h-8 text-xs">
+                                 <SelectValue placeholder="Grade" />
+                               </SelectTrigger>
+                               <SelectContent>
+                                 <SelectItem value="A">A (Excellent)</SelectItem>
+                                 <SelectItem value="B">B (Very Good)</SelectItem>
+                                 <SelectItem value="C">C (Good)</SelectItem>
+                                 <SelectItem value="D">D (Developing)</SelectItem>
+                                 <SelectItem value="E">E (Needs Improv.)</SelectItem>
+                               </SelectContent>
+                             </Select>
+                           </div>
+                         );
+                       })}
+                     </div>
+                     <div className="space-y-4 border p-4 rounded-md">
+                       <h4 className="font-semibold">Psychomotor Skills</h4>
+                       {['Colouring', 'Drawing', 'Cutting & Pasting', 'Pencil Control', 'Building Blocks', 'Physical Activities'].map(skill => {
+                         const key = skill.toLowerCase().replace(/ /g, '') as string;
+                         return (
+                           <div key={skill} className="flex justify-between items-center">
+                             <Label className="text-xs">{skill}</Label>
+                             <Select 
+                               value={(report.preschoolPsychomotorSkills as any)?.[key] || ''}
+                               onValueChange={(val) => setReport(prev => ({ ...prev, preschoolPsychomotorSkills: { ...prev.preschoolPsychomotorSkills, [key]: val } }))}
+                             >
+                               <SelectTrigger className="w-[140px] h-8 text-xs">
+                                 <SelectValue placeholder="Grade" />
+                               </SelectTrigger>
+                               <SelectContent>
+                                 <SelectItem value="A">A (Excellent)</SelectItem>
+                                 <SelectItem value="B">B (Very Good)</SelectItem>
+                                 <SelectItem value="C">C (Good)</SelectItem>
+                                 <SelectItem value="D">D (Developing)</SelectItem>
+                                 <SelectItem value="E">E (Needs Improv.)</SelectItem>
+                               </SelectContent>
+                             </Select>
+                           </div>
+                         );
+                       })}
+                     </div>
                    </div>
-                   
-                   <div className="space-y-4 border p-4 rounded-md">
-                     <h4 className="font-semibold">Behaviour / Affective</h4>
-                     {['Obedience', 'Neatness', 'Punctuality'].map(skill => (
-                       <div key={skill} className="flex justify-between items-center">
-                         <Label>{skill}</Label>
-                         <Select 
-                           value={(report.skills as any)?.[skill.toLowerCase().replace(' ', '')] || ''}
-                           onValueChange={(val) => setReport(prev => ({ ...prev, skills: { ...prev.skills, [skill.toLowerCase().replace(' ', '')]: val } }))}
-                         >
-                           <SelectTrigger className="w-[180px] h-8 text-xs">
-                             <SelectValue placeholder="Select rating" />
-                           </SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="Excellent">Excellent</SelectItem>
-                             <SelectItem value="Very Good">Very Good</SelectItem>
-                             <SelectItem value="Good">Good</SelectItem>
-                             <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
-                           </SelectContent>
-                         </Select>
-                       </div>
-                     ))}
+                 ) : (
+                   <div className="grid grid-cols-2 gap-6">
+                     <div className="space-y-4 border p-4 rounded-md">
+                       <h4 className="font-semibold">Core Skills</h4>
+                       {['Reading', 'Writing', 'Number Work', 'Creativity'].map(skill => (
+                         <div key={skill} className="flex justify-between items-center">
+                           <Label>{skill}</Label>
+                           <Select 
+                             value={(report.skills as any)?.[skill.toLowerCase().replace(' ', '')] || ''}
+                             onValueChange={(val) => setReport(prev => ({ ...prev, skills: { ...prev.skills, [skill.toLowerCase().replace(' ', '')]: val } }))}
+                           >
+                             <SelectTrigger className="w-[180px] h-8 text-xs">
+                               <SelectValue placeholder="Select rating" />
+                             </SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="Excellent">Excellent</SelectItem>
+                               <SelectItem value="Very Good">Very Good</SelectItem>
+                               <SelectItem value="Good">Good</SelectItem>
+                               <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
+                             </SelectContent>
+                           </Select>
+                         </div>
+                       ))}
+                     </div>
+                     
+                     <div className="space-y-4 border p-4 rounded-md">
+                       <h4 className="font-semibold">Behaviour / Affective</h4>
+                       {['Obedience', 'Neatness', 'Punctuality'].map(skill => (
+                         <div key={skill} className="flex justify-between items-center">
+                           <Label>{skill}</Label>
+                           <Select 
+                             value={(report.skills as any)?.[skill.toLowerCase().replace(' ', '')] || ''}
+                             onValueChange={(val) => setReport(prev => ({ ...prev, skills: { ...prev.skills, [skill.toLowerCase().replace(' ', '')]: val } }))}
+                           >
+                             <SelectTrigger className="w-[180px] h-8 text-xs">
+                               <SelectValue placeholder="Select rating" />
+                             </SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="Excellent">Excellent</SelectItem>
+                               <SelectItem value="Very Good">Very Good</SelectItem>
+                               <SelectItem value="Good">Good</SelectItem>
+                               <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
+                             </SelectContent>
+                           </Select>
+                         </div>
+                       ))}
+                     </div>
                    </div>
-                 </div>
+                 )}
+              </TabsContent>
+              
+              <TabsContent value="health" className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>General Health</Label>
+                      <Select 
+                        value={report.healthRecord?.generalHealth || ''}
+                        onValueChange={val => setReport(prev => ({ ...prev, healthRecord: { ...prev.healthRecord, generalHealth: val } }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Excellent">Excellent</SelectItem>
+                          <SelectItem value="Good">Good</SelectItem>
+                          <SelectItem value="Fair">Fair</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Vision</Label>
+                      <Select 
+                        value={report.healthRecord?.vision || ''}
+                        onValueChange={val => setReport(prev => ({ ...prev, healthRecord: { ...prev.healthRecord, vision: val } }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Good">Good</SelectItem>
+                          <SelectItem value="Needs Attention">Needs Attention</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Hearing</Label>
+                      <Select 
+                        value={report.healthRecord?.hearing || ''}
+                        onValueChange={val => setReport(prev => ({ ...prev, healthRecord: { ...prev.healthRecord, hearing: val } }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Good">Good</SelectItem>
+                          <SelectItem value="Needs Attention">Needs Attention</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Teacher's Observation</Label>
+                    <Textarea 
+                      className="h-32"
+                      placeholder="Any specific health observations..."
+                      value={report.healthRecord?.observation || ''}
+                      onChange={e => setReport(prev => ({ ...prev, healthRecord: { ...prev.healthRecord, observation: e.target.value } }))}
+                    />
+                  </div>
+                </div>
               </TabsContent>
               
               <TabsContent value="remarks" className="space-y-4">
@@ -457,6 +662,30 @@ export function ReportEntryForm({ student, schoolId, className, settings, onClos
                       placeholder="e.g. Primary 4"
                       value={report.promotion?.promotedTo || ''}
                       onChange={e => setReport(prev => ({ ...prev, promotion: { ...prev.promotion!, promotedTo: e.target.value } }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Next Term Begins</Label>
+                    <Input 
+                      placeholder="e.g. 10th September"
+                      value={report.nextTermInfo?.begins || ''}
+                      onChange={e => setReport(prev => ({ ...prev, nextTermInfo: { ...prev.nextTermInfo, begins: e.target.value } }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>School Reopens</Label>
+                    <Input 
+                      placeholder="e.g. 10th September"
+                      value={report.nextTermInfo?.reopens || ''}
+                      onChange={e => setReport(prev => ({ ...prev, nextTermInfo: { ...prev.nextTermInfo, reopens: e.target.value } }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>School Fees Outstanding (GH₵)</Label>
+                    <Input 
+                      placeholder="e.g. 500"
+                      value={report.nextTermInfo?.feesOutstanding || ''}
+                      onChange={e => setReport(prev => ({ ...prev, nextTermInfo: { ...prev.nextTermInfo, feesOutstanding: e.target.value } }))}
                     />
                   </div>
                 </div>

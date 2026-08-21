@@ -27,9 +27,11 @@ interface FeePaymentDialogProps {
   dailyFeesBalance: number;
   dailyFeeEstimate: number;
   dailyAccrued: number;
+  defaultOpen?: boolean;
 }
 
 export function FeePaymentDialog({
+  children,
   outstandingBalance,
   studentId,
   studentName,
@@ -41,8 +43,9 @@ export function FeePaymentDialog({
   dailyFeesBalance,
   dailyFeeEstimate,
   dailyAccrued,
-}: FeePaymentDialogProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  defaultOpen = false,
+}: FeePaymentDialogProps & { children?: React.ReactNode }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [customAmount, setCustomAmount] = useState<number | string>('');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isVerifying, setIsVerifying] = useState(false);
@@ -51,6 +54,9 @@ export function FeePaymentDialog({
 
   const refKey = `last_hubtel_ref_${schoolId}_${studentId}`;
   const lastRef = typeof window !== 'undefined' ? localStorage.getItem(refKey) : null;
+
+  const netDailyOwed = dailyAccrued + dailyFeesBalance;
+  const netDailyDisplay = Math.max(0, netDailyOwed);
 
   const handleToggleItem = (item: string, amount: number) => {
     const newSelected = new Set(selectedItems);
@@ -63,8 +69,8 @@ export function FeePaymentDialog({
     
     // Calculate new total from selected items
     let total = 0;
-    if (newSelected.has('Main School Fees') && mainFeesBalance > 0) total += mainFeesBalance;
-    if (newSelected.has('Daily Fees') && dailyAccrued > 0) total += dailyAccrued;
+    if (newSelected.has('Core School Fees') && mainFeesBalance > 0) total += mainFeesBalance;
+    if (newSelected.has('Daily Recurring Fees') && netDailyDisplay > 0) total += netDailyDisplay;
     
     setCustomAmount(total > 0 ? total.toFixed(2) : '');
   };
@@ -114,15 +120,25 @@ export function FeePaymentDialog({
 
   // Prepare display items
   const displayDescription = selectedItems.size > 0 
-    ? `Fees: ${Array.from(selectedItems).join(', ')}`
+    ? `${studentName.split(' ')[0]} - ${Array.from(selectedItems).join(', ')}`
     : `Fee Payment: ${studentName}`;
+
+  // Determine fee type so the webhook credits the correct ledger bucket
+  const hasDailySelected = selectedItems.has('Daily Recurring Fees');
+  const hasMainSelected = selectedItems.has('Core School Fees');
+  const feeType: 'daily' | 'main' | 'mixed' =
+    hasDailySelected && hasMainSelected ? 'mixed'
+    : hasDailySelected ? 'daily'
+    : 'main';
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button style={{ backgroundColor: '#04396d' }} className="w-full text-white py-6 text-lg">
-          Pay Fees Online
-        </Button>
+        {children || (
+          <Button style={{ backgroundColor: '#04396d' }} className="w-full text-white py-6 text-lg">
+            Pay Fees Online
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -134,44 +150,40 @@ export function FeePaymentDialog({
             <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground">Select Fees to Pay</h3>
             
             <div className="space-y-2">
-                {mainFeesBalance > 0 && (
                     <div 
-                        onClick={() => handleToggleItem('Main School Fees', mainFeesBalance)}
+                        onClick={() => handleToggleItem('Core School Fees', mainFeesBalance)}
                         className={`flex justify-between items-center p-3 rounded-md border-2 cursor-pointer transition-all ${
-                            selectedItems.has('Main School Fees') ? 'border-primary bg-primary/5' : 'border-transparent bg-background/50'
+                            selectedItems.has('Core School Fees') ? 'border-primary bg-primary/5' : 'border-transparent bg-background/50'
                         }`}
                     >
                         <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedItems.has('Main School Fees') ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
-                                {selectedItems.has('Main School Fees') && <div className="w-2 h-2 bg-white rounded-full" />}
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedItems.has('Core School Fees') ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
+                                {selectedItems.has('Core School Fees') && <div className="w-2 h-2 bg-white rounded-full" />}
                             </div>
-                            <span className="text-sm font-semibold">Main School Fees</span>
+                            <span className="text-sm font-semibold">Core School Fees</span>
                         </div>
-                        <span className="font-mono font-bold">GH¢{mainFeesBalance.toFixed(2)}</span>
+                        <span className="font-mono font-bold">GH¢{Math.max(0, mainFeesBalance).toFixed(2)}</span>
                     </div>
-                )}
 
-                {(dailyAccrued > 0 || dailyFeeEstimate > 0) && (
                     <div 
-                        onClick={() => (dailyAccrued > 0 || dailyFeeEstimate > 0) && handleToggleItem('Daily Fees', dailyAccrued > 0 ? dailyAccrued : 0)}
-                        className={`flex justify-between items-center p-3 rounded-md border-2 transition-all ${
-                            selectedItems.has('Daily Fees') ? 'border-primary bg-primary/5' : 'border-transparent bg-background/50'
-                        } ${(dailyAccrued <= 0 && dailyFeeEstimate <= 0) ? 'opacity-70' : 'cursor-pointer'}`}
+                        onClick={() => handleToggleItem('Daily Recurring Fees', netDailyDisplay > 0 ? netDailyDisplay : 0)}
+                        className={`flex justify-between items-center p-3 rounded-md border-2 cursor-pointer transition-all ${
+                            selectedItems.has('Daily Recurring Fees') ? 'border-primary bg-primary/5' : 'border-transparent bg-background/50'
+                        }`}
                     >
                         <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedItems.has('Daily Fees') ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
-                                {selectedItems.has('Daily Fees') && <div className="w-2 h-2 bg-white rounded-full" />}
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedItems.has('Daily Recurring Fees') ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
+                                {selectedItems.has('Daily Recurring Fees') && <div className="w-2 h-2 bg-white rounded-full" />}
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-sm font-semibold">Total Daily Accrued</span>
+                                <span className="text-sm font-semibold">Daily Recurring Fee</span>
                                 {dailyFeeEstimate > 0 && (
                                     <span className="text-[10px] text-muted-foreground">Term Estimate: GH¢{dailyFeeEstimate.toFixed(2)}</span>
                                 )}
                             </div>
                         </div>
-                        <span className="font-mono font-bold">GH¢{dailyAccrued > 0 ? dailyAccrued.toFixed(2) : '0.00'}</span>
+                        <span className="font-mono font-bold">GH¢{netDailyDisplay > 0 ? netDailyDisplay.toFixed(2) : '0.00'}</span>
                     </div>
-                )}
             </div>
 
             <div className="flex justify-between items-center pt-2 border-t font-bold">
@@ -195,10 +207,10 @@ export function FeePaymentDialog({
                     className="text-lg py-6 font-bold"
                   />
                   {isInvalidAmount && customAmount !== '' && amountToPay > maxAllowedPayment + 0.01 && (
-                      <p className="text-[10px] text-destructive mt-1 font-bold">Amount exceeds maximum allowed payment (GH¢{maxAllowedPayment.toFixed(2)})</p>
+                      <p className="text-sm text-destructive mt-2 font-bold bg-destructive/10 p-2 rounded-md">Amount exceeds maximum allowed payment (GH¢{maxAllowedPayment.toFixed(2)})</p>
                   )}
                   {!isInvalidAmount && customAmount !== '' && amountToPay > Math.max(0, outstandingBalance) + 0.01 && (
-                      <p className="text-[10px] text-success mt-1 font-bold">Advance payment of GH¢{(amountToPay - Math.max(0, outstandingBalance)).toFixed(2)} will be credited for future daily fees.</p>
+                      <p className="text-sm text-emerald-600 mt-2 font-bold bg-emerald-50 p-2 border border-emerald-200 rounded-md">Advance payment of GH¢{(amountToPay - Math.max(0, outstandingBalance)).toFixed(2)} will be credited for future {feeType === 'daily' ? 'daily recurring fees' : feeType === 'mixed' ? 'fees' : 'core school fees'}.</p>
                   )}
                 </div>
               </div>
@@ -213,6 +225,7 @@ export function FeePaymentDialog({
                     schoolId={schoolId}
                     periodId={periodId}
                     description={displayDescription}
+                    feeType={feeType}
                     onInitialize={() => setIsOpen(false)}
                     disabled={!canPay}
                     className="w-full py-6 text-lg font-black"

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Users, Landmark, Loader2, CheckCircle2, Search } from 'lucide-react';
-import { Student, FeeCategory, AcademicPeriod, postBulkParentMainPayment, calculateInstallmentOutstandingBalance } from '@/lib/data-store';
+import { Student, FeeCategory, AcademicPeriod, postBulkParentMainPayment, calculateStudentTotalBalance } from '@/lib/data-store';
 import { useToast } from '@/hooks/use-toast';
 import { Auth } from 'firebase/auth';
 import { Firestore } from 'firebase/firestore';
@@ -23,6 +23,7 @@ interface ParentBulkMainPaymentModalProps {
     db: Firestore;
     auth: Auth;
     period: AcademicPeriod;
+    periods: AcademicPeriod[];
     onSuccess: () => void;
 }
 
@@ -35,6 +36,7 @@ export const ParentBulkMainPaymentModal: React.FC<ParentBulkMainPaymentModalProp
     db,
     auth,
     period,
+    periods,
     onSuccess
 }) => {
     const { toast } = useToast();
@@ -55,14 +57,18 @@ export const ParentBulkMainPaymentModal: React.FC<ParentBulkMainPaymentModalProp
     // Extract unique parents
     const parents = useMemo(() => {
         const parentMap = new Map<string, { id: string, phone: string, name: string, childrenCount: number }>();
+        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
         students.forEach(s => {
-            const pId = s.parentPhone || s.parentId || s.parentName; // Prefer phone as unique ID
+            const pId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
             if (pId) {
                 if (!parentMap.has(pId)) {
-                    parentMap.set(pId, { id: pId, phone: s.parentPhone || '', name: s.parentName || 'Unknown Parent', childrenCount: 1 });
+                    parentMap.set(pId, { id: pId, phone: s.parentPhone || '', name: s.parentName || `Parent of ${s.name}`, childrenCount: 1 });
                 } else {
                     const p = parentMap.get(pId)!;
                     p.childrenCount++;
+                    if (!s.parentName && p.name.startsWith('Parent of ') && !p.name.includes(' and Sibling(s)')) {
+                        p.name += ' and Sibling(s)';
+                    }
                 }
             }
         });
@@ -103,9 +109,10 @@ export const ParentBulkMainPaymentModal: React.FC<ParentBulkMainPaymentModalProp
         });
 
         // 2. Search Students
+        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
         students.forEach(s => {
             if (s.name.toLowerCase().includes(q) || (s.studentId && s.studentId.toLowerCase().includes(q))) {
-                const pId = s.parentPhone || s.parentId || s.parentName;
+                const pId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
                 if (pId && !addedParentIds.has(pId)) {
                     const p = parents.find(parent => parent.id === pId);
                     if (p) {
@@ -128,20 +135,20 @@ export const ParentBulkMainPaymentModal: React.FC<ParentBulkMainPaymentModalProp
 
     const selectedChildren = useMemo(() => {
         if (!selectedParentId) return [];
-        return students.filter(s => 
-            (s.parentPhone && s.parentPhone === selectedParentId) || 
-            (s.parentId && s.parentId === selectedParentId) || 
-            (s.parentName && s.parentName === selectedParentId)
-        );
+        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
+        return students.filter(s => {
+            const pId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
+            return pId === selectedParentId;
+        });
     }, [students, selectedParentId]);
 
     const childrenDebts = useMemo(() => {
         if (selectedChildren.length === 0) return [];
         return selectedChildren.map(student => {
-            const { outstandingBalance } = calculateInstallmentOutstandingBalance(student, period, feeCategories);
-            return { student, debt: outstandingBalance };
+            const balanceInfo = calculateStudentTotalBalance(student, periods, period.id, feeCategories);
+            return { student, debt: Math.max(0, balanceInfo.mainData.balance) };
         });
-    }, [selectedChildren, period, feeCategories]);
+    }, [selectedChildren, period, periods, feeCategories]);
 
     const totalDebt = useMemo(() => childrenDebts.reduce((sum, item) => sum + Math.max(0, item.debt), 0), [childrenDebts]);
 
@@ -197,7 +204,7 @@ export const ParentBulkMainPaymentModal: React.FC<ParentBulkMainPaymentModalProp
                 <DialogHeader className="bg-indigo-600 text-white p-8">
                     <DialogTitle className="text-2xl font-black flex items-center gap-3">
                         <Users className="w-8 h-8" />
-                        Parent Bulk Payment (Main Fees)
+                        Parent Bulk Payment (Core Fees)
                     </DialogTitle>
                     <DialogDescription className="text-indigo-100 font-medium">
                         Record a lump sum payment from a parent. The system will automatically distribute it across all their children to clear termly/academic debts.

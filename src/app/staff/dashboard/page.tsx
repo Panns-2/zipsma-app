@@ -5,7 +5,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { StaffId, getStudents, Student, getSchoolDetails } from '@/lib/data-store';
 import { useFirebase, useAuth } from '@/firebase/client-provider';
-import { Loader2, LogOut, ChevronRight, GraduationCap, LayoutDashboard, BrainCircuit, AlertCircle, Calendar, Clock, User, Bell, HelpCircle, Users } from 'lucide-react';
+import { Loader2, LogOut, ChevronRight, GraduationCap, LayoutDashboard, BrainCircuit, AlertCircle, Calendar, Clock, User, Bell, HelpCircle, Users, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -15,7 +15,6 @@ import Link from 'next/link';
 import { motion, type Variants } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { doc, getDoc } from 'firebase/firestore';
-import AccountantDashboardContent from '@/components/accountant-dashboard-content';
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -187,15 +186,6 @@ export default function StaffDashboard() {
     );
   }
 
-  if (staffMember.role === 'Accountant') {
-    return (
-      <AccountantDashboardContent 
-        staffMember={staffMember}
-        handleLogout={handleLogout}
-        currentDate={currentDate}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col font-sans selection:bg-primary/20">
@@ -284,40 +274,63 @@ export default function StaffDashboard() {
             {/* Primary Class Card */}
             <motion.div variants={itemVariants} className="lg:col-span-8">
               {staffMember.className ? (
-                <Link href={`/staff/class/${encodeURIComponent(staffMember.className)}?schoolId=${staffMember.schoolId}`} passHref>
-                  <Card className="h-full border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 cursor-pointer bg-white/80 backdrop-blur-xl group overflow-hidden relative ring-1 ring-gray-200/50">
+                <Link href={`/staff/class?name=${encodeURIComponent(staffMember.className)}&schoolId=${staffMember.schoolId}`} passHref>
+                  <Card className="h-full border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 cursor-pointer bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 text-white group overflow-hidden relative">
                     {/* Card Background Decoration */}
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-primary/10 to-transparent rounded-full blur-3xl -mr-20 -mt-20 transition-transform duration-700 group-hover:scale-150"></div>
-                    <div className="absolute bottom-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity duration-500">
-                      <GraduationCap className="w-48 h-48" />
-                    </div>
-
+                    <div className="absolute inset-0 bg-[url('/images/classroom_3d_icon.png')] bg-no-repeat bg-right-bottom bg-contain opacity-20 mix-blend-screen transition-opacity duration-500 group-hover:opacity-40"></div>
+                    
                     <div className="p-8 md:p-10 relative z-10 flex flex-col h-full justify-between gap-8">
                       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                         <div>
-                          <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary/80 uppercase tracking-wider mb-3">
+                          <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-200 uppercase tracking-wider mb-3">
                             <LayoutDashboard className="w-4 h-4" /> Your Classroom
                           </div>
-                          <CardTitle className="text-4xl md:text-5xl font-headline text-gray-900 group-hover:text-primary transition-colors duration-300">
+                          <CardTitle className="text-4xl md:text-5xl font-headline text-white group-hover:text-blue-100 transition-colors duration-300">
                             {staffMember.className}
                           </CardTitle>
-                          <CardDescription className="text-lg mt-3 text-gray-600 max-w-md">
+                          <CardDescription className="text-lg mt-3 text-blue-100 max-w-md">
                             Manage attendance, view student profiles, and update term records.
                           </CardDescription>
                         </div>
-                        <div className="hidden md:flex p-5 bg-white shadow-sm rounded-2xl border border-gray-100 group-hover:border-primary/20 group-hover:shadow-md transition-all duration-300">
-                          <GraduationCap className="h-10 w-10 text-primary" />
+                        <div className="hidden md:flex p-5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 group-hover:bg-white/20 transition-all duration-300">
+                          <GraduationCap className="h-10 w-10 text-white" />
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-6 border-t border-gray-100/80">
+                      {/* Quick Stats Grid to fill space */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-2">
+                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 flex flex-col justify-center transition-all hover:bg-white/20 hover:shadow-md">
+                          <div className="text-blue-200 text-sm font-medium mb-1">Total Students</div>
+                          <div className="text-3xl font-bold text-white font-headline">
+                            {students.filter(s => s.className === staffMember.className).length}
+                          </div>
+                        </div>
+                        <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl p-4 border border-emerald-400/30 flex flex-col justify-center transition-all hover:bg-emerald-500/30 hover:shadow-md">
+                          <div className="text-emerald-300 text-sm font-medium mb-1">Present Today</div>
+                          <div className="text-3xl font-bold text-emerald-100 font-headline">
+                            {students.filter(s => s.className === staffMember.className).filter(s => 
+                              s.attendance?.some(a => a.date === new Date().toISOString().split('T')[0] && a.attended)
+                            ).length}
+                          </div>
+                        </div>
+                        <div className="col-span-2 md:col-span-1 bg-rose-500/20 backdrop-blur-md rounded-2xl p-4 border border-rose-400/30 flex flex-col justify-center transition-all hover:bg-rose-500/30 hover:shadow-md">
+                          <div className="text-rose-300 text-sm font-medium mb-1">Absent Today</div>
+                          <div className="text-3xl font-bold text-rose-100 font-headline">
+                            {students.filter(s => s.className === staffMember.className).length - students.filter(s => s.className === staffMember.className).filter(s => 
+                              s.attendance?.some(a => a.date === new Date().toISOString().split('T')[0] && a.attended)
+                            ).length}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-6 mt-4 border-t border-white/10">
                         <div className="flex items-center gap-3">
-                          <Button variant="default" className="rounded-full shadow-md group-hover:shadow-lg transition-all duration-300 px-6 h-12">
+                          <Button variant="secondary" className="rounded-full shadow-md group-hover:shadow-lg transition-all duration-300 px-6 h-12 bg-white text-blue-900 hover:bg-gray-100">
                             Open Dashboard
                           </Button>
                         </div>
-                        <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-primary/10 transition-colors duration-300">
-                          <ChevronRight className="h-6 w-6 text-gray-400 group-hover:text-primary translate-x-0 group-hover:translate-x-1 transition-all duration-300" />
+                        <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors duration-300">
+                          <ChevronRight className="h-6 w-6 text-white translate-x-0 group-hover:translate-x-1 transition-all duration-300" />
                         </div>
                       </div>
                     </div>
@@ -340,57 +353,31 @@ export default function StaffDashboard() {
 
             {/* Quick Actions & Tools */}
             <motion.div variants={itemVariants} className="lg:col-span-4 flex flex-col gap-6">
-              {/* Attendance Summary Card */}
-              <Card className="border-0 shadow-lg bg-white overflow-hidden rounded-3xl ring-1 ring-gray-100">
-                <div className="p-6 relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-emerald-50 rounded-2xl">
-                      <Users className="w-6 h-6 text-emerald-600" />
+              {/* Digital Lesson Plans Card */}
+              {staffMember.className && (
+                <Link href={`/staff/class?name=${encodeURIComponent(staffMember.className)}&schoolId=${staffMember.schoolId}`} passHref className="flex-1">
+                  <Card className="h-full border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer bg-gradient-to-br from-teal-500 to-emerald-600 group relative overflow-hidden rounded-3xl">
+                    {/* Decorative Elements */}
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                    <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/10 rounded-full blur-xl -ml-10 -mb-10"></div>
+                    
+                    <div className="p-6 md:p-8 relative z-10 flex flex-col h-full">
+                      <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 border border-white/20 shadow-inner">
+                        <BookOpen className="h-7 w-7 text-white" />
+                      </div>
+                      <CardTitle className="text-2xl font-headline text-white mb-3">
+                        Digital Lesson Plans
+                      </CardTitle>
+                      <p className="text-teal-50 text-sm leading-relaxed mb-8 flex-1">
+                        Draft, submit, and review your weekly lesson plans with the headmaster directly online.
+                      </p>
+                      <div className="flex items-center text-white font-medium text-sm mt-auto bg-white/10 w-fit px-4 py-2 rounded-full backdrop-blur-sm border border-white/10 group-hover:bg-white/20 transition-colors">
+                        Manage Plans <ChevronRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                      </div>
                     </div>
-                    <Badge variant="outline" className="bg-emerald-50/50 text-emerald-700 border-emerald-100 font-bold">Live Count</Badge>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-                      {staffMember.className ? `${staffMember.className} Attendance` : 'School Attendance'}
-                    </p>
-                    <h3 className="text-4xl font-bold text-gray-900 font-headline">
-                      {staffMember.className ? (
-                        <>
-                          {students.filter(s => s.className === staffMember.className).filter(s => 
-                            s.attendance?.some(a => a.date === new Date().toISOString().split('T')[0] && a.attended)
-                          ).length} 
-                          <span className="text-lg text-gray-400 font-medium"> / {students.filter(s => s.className === staffMember.className).length}</span>
-                        </>
-                      ) : (
-                        <>
-                          {presentCount} <span className="text-lg text-gray-400 font-medium">/ {students.length}</span>
-                        </>
-                      )}
-                    </h3>
-                    <p className="text-sm text-gray-500 font-medium">
-                      Students present {staffMember.className ? 'in your class' : 'in school'} today
-                    </p>
-                  </div>
-                  
-                  {/* Progress Bar */}
-                  <div className="mt-6 h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ 
-                        width: staffMember.className 
-                          ? `${students.filter(s => s.className === staffMember.className).length > 0 
-                              ? (students.filter(s => s.className === staffMember.className).filter(s => 
-                                  s.attendance?.some(a => a.date === new Date().toISOString().split('T')[0] && a.attended)
-                                ).length / students.filter(s => s.className === staffMember.className).length) * 100 
-                              : 0}%`
-                          : `${students.length > 0 ? (presentCount / students.length) * 100 : 0}%`
-                      }}
-                      transition={{ duration: 1, ease: "easeOut" }}
-                      className="h-full bg-emerald-500 rounded-full"
-                    />
-                  </div>
-                </div>
-              </Card>
+                  </Card>
+                </Link>
+              )}
 
               <h3 className="text-lg font-semibold text-gray-800 px-1 hidden lg:block">Quick Tools</h3>
               
@@ -428,12 +415,13 @@ export default function StaffDashboard() {
                   <h3 className="text-xl font-bold font-headline text-gray-900">Class Attendance Summary</h3>
                 </div>
                 <Badge variant="secondary" className="font-semibold text-primary bg-primary/5 border-primary/10">
-                  All Classes
+                  {staffMember.className ? staffMember.className : "All Classes"}
                 </Badge>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {Object.entries(attendanceBreakdown)
+                  .filter(([className]) => !staffMember.className || className === staffMember.className)
                   .sort(([a], [b]) => a.localeCompare(b))
                   .map(([className, stats]) => {
                     const percentage = stats.total > 0 ? (stats.present / stats.total) * 100 : 0;

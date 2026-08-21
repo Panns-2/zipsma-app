@@ -53,7 +53,7 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
     const amountInWords = numberToWords(payment.amount);
     
     // Format Period Label
-    let periodLabel = payment.periodId || 'N/A';
+    let periodLabel = payment.periodId || '';
     if (payment.periodId && periods.length > 0) {
         const period = periods.find(p => p.id === payment.periodId);
         if (period) {
@@ -81,26 +81,15 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
     let totalBilled = 0;
     let totalPaid = 0;
     
-    // Calculate totals from the unified ledger
+    // Calculate totals from the unified ledger up to this payment
     const ledger = student.ledger || [];
-    const targetCategory = type.toLowerCase();
     
-    // Filter transactions relevant to this receipt type
-    const relevantTransactions = ledger.filter(t => {
-        if (t.isVoided) return false;
-        const cat = (t.category || '').toLowerCase();
-        const catId = (t.categoryId || '').toLowerCase();
-        
-        // Match specific legacy categories or the specific category ID
-        if (targetCategory === 'general') return cat === 'general' || catId === 'general' || !cat;
-        if (targetCategory === 'feeding') return cat === 'feeding' || catId === 'feeding';
-        if (targetCategory === 'transportation') return cat === 'transportation' || catId === 'transportation';
-        
-        return cat === targetCategory || catId === targetCategory;
-    });
+    const paymentIndex = ledger.findIndex(t => t.id === payment.id?.toString() || Number(t.id) === payment.id);
+    const ledgerUpToPayment = paymentIndex >= 0 ? ledger.slice(0, paymentIndex + 1) : ledger;
+    const validTransactions = ledgerUpToPayment.filter(t => !t.isVoided);
 
-    totalBilled = relevantTransactions.reduce((sum, t) => sum + (Number(t.debit) || 0), 0);
-    totalPaid = relevantTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
+    totalBilled = validTransactions.reduce((sum, t) => sum + (Number(t.debit) || 0), 0);
+    totalPaid = validTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
     
     const currentBalance = totalBilled - totalPaid;
     const previousBalance = currentBalance + payment.amount;
@@ -398,8 +387,8 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
                     <div class="contact-section">
                         <h2 class="main-school-name">${school.name}</h2>
                         <div class="contact-info">
-                            <p><strong>Email:</strong> ${school.schoolEmail || school.adminEmail || 'N/A'}</p>
-                            <p><strong>Phone Number:</strong> ${school.schoolPhone || 'N/A'}</p>
+                            <p><strong>Email:</strong> ${school.schoolEmail || school.adminEmail || ''}</p>
+                            <p><strong>Phone Number:</strong> ${school.schoolPhone || ''}</p>
                         </div>
                     </div>
                 </div>
@@ -429,7 +418,7 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
                         </div>
                         <div class="info-item" style="grid-column: span 1;">
                             <span class="info-label">Phone:</span>
-                            <span class="info-value">${student.parentPhone || 'N/A'}</span>
+                            <span class="info-value">${student.parentPhone || ''}</span>
                         </div>
                     </div>
                 </div>
@@ -499,10 +488,140 @@ export const generateReceipt = (school: School, student: Student, payment: Payme
         </html>
     `;
 
-    const win = window.open('', '_blank');
-    if (win) {
-        win.document.write(receiptHtml);
-        win.document.close();
-    }
+    const blob = new Blob([receiptHtml], { type: 'text/html' });
+    const blobUrl = URL.createObjectURL(blob);
+    
+    // Use an anchor tag to open in a new tab with noopener/noreferrer
+    // This avoids triggering popup window mode which often gets blocked
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the blob URL after a reasonable time
+    setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+    }, 60000); // 1 minute
 };
 
+export const generateThermalReceipt = (school: School, student: Student, payment: PaymentItem, currentBalance: number) => {
+    const receiptId = `RCP-${payment.id.toString().slice(-6).toUpperCase()}`;
+    const date = new Date(payment.date).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    });
+    
+    // Determine fee type display name based on payment category/type
+    const catId = (payment as any).categoryId;
+    const catName = (payment as any).category;
+    const feeTypeName = catName || (catId === 'daily_fee' ? 'Daily Recurring Fee' : (catId === 'fees_payment' ? 'Core School Fees' : 'School Fee'));
+
+    const receiptHtml = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Thermal Receipt - ${receiptId}</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+                
+                * {
+                    box-sizing: border-box;
+                    -webkit-print-color-adjust: exact;
+                }
+
+                body {
+                    font-family: 'Space Mono', monospace;
+                    margin: 0;
+                    padding: 0;
+                    background-color: white;
+                    color: black;
+                    width: 58mm; /* Standard 58mm thermal printer */
+                    display: flex;
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+
+                @media print {
+                    @page { margin: 0; size: 58mm auto; }
+                    body { margin: 0; padding: 5mm; }
+                }
+
+                .center { text-align: center; }
+                .bold { font-weight: 700; }
+                .header-title { font-size: 13px; margin-bottom: 2px; }
+                .header-sub { font-size: 11px; margin-bottom: 5px; }
+                
+                .divider {
+                    border-top: 1px dashed black;
+                    margin: 6px 0;
+                }
+                
+                .text { font-size: 11px; margin: 3px 0; }
+                
+                .row {
+                    display: flex;
+                    justify-content: space-between;
+                }
+                
+                .footer { font-size: 11px; margin-top: 15px; margin-bottom: 5px; }
+            </style>
+        </head>
+        <body>
+            <div class="center bold header-title">${school.name.toUpperCase()}</div>
+            <div class="center header-sub">OFFICIAL FEE RECEIPT</div>
+            
+            <div class="divider"></div>
+            
+            <div class="text">Receipt No: ${receiptId}</div>
+            <div class="text row"><span>Student:</span> <span>${student.name.substring(0, 15)}</span></div>
+            <div class="text row"><span>Class:</span> <span>${student.className}</span></div>
+            
+            <div class="divider"></div>
+            
+            <div class="text row bold"><span>Fee Type</span> <span>Amount</span></div>
+            <div class="text row"><span>${feeTypeName}</span> <span>GH&cent; ${payment.amount.toFixed(2)}</span></div>
+            
+            <div class="divider"></div>
+            
+            <div class="text row"><span>Balance</span> <span>GH&cent; ${currentBalance.toFixed(2)}</span></div>
+            
+            <div class="divider"></div>
+            
+            <div class="text">Date: ${date}</div>
+            
+            <div class="center footer">Thank you for your payment</div>
+            
+            <div class="divider"></div>
+
+            <script>
+                window.onload = () => {
+                    setTimeout(() => {
+                        window.print();
+                    }, 500);
+                };
+            </script>
+        </body>
+        </html>
+    `;
+
+    const blob = new Blob([receiptHtml], { type: 'text/html' });
+    const blobUrl = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+    }, 60000); // 1 minute
+};

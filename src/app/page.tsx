@@ -31,7 +31,9 @@ const LoginPage: NextPage = () => {
   const portalRoles = [
     { id: 'student', title: 'Family Portal', image: '/student_portal.png', description: 'Access student records, results & fees.' },
     { id: 'staff', title: 'Staff Portal', image: '/staff_portal.png', description: 'Manage classes, attendance & grades.' },
-    { id: 'admin', title: 'Admin Portal', image: '/admin_portal.png', description: 'School administration & management.' }
+    { id: 'admin', title: 'Admin Portal', image: '/admin_portal.png', description: 'School administration & management.' },
+    { id: 'gate', title: 'Gatekeeper Kiosk', image: '/gatekeeper_portal.png', description: 'Secure QR Check-In Scanner.' },
+    { id: 'payment', title: 'Smart Payment Kiosk', image: '/smart_payment_ghana.png', description: 'Secure NFC/QR Payment System.' }
   ];
 
   useEffect(() => {
@@ -212,7 +214,7 @@ const LoginPage: NextPage = () => {
 
       {/* Portal Access Section */}
       <section id="portals" className="py-20 md:py-32 bg-[#d9dadc]">
-        <div className="container mx-auto px-4 md:px-6">
+        <div className="w-full max-w-[1920px] mx-auto px-4 md:px-8">
             {/* Centered Header */}
             <div className="text-center max-w-4xl mx-auto mb-16 md:mb-24 space-y-6">
                 <h2 className="text-4xl md:text-6xl font-bold font-headline">Secure Portal <span className="text-primary">Access Center</span></h2>
@@ -234,7 +236,7 @@ const LoginPage: NextPage = () => {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto">
+            <div className="w-full">
                 <AnimatePresence mode="wait">
                     {!showLogin ? (
                         <motion.div 
@@ -242,23 +244,29 @@ const LoginPage: NextPage = () => {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95 }}
-                            className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-10 lg:gap-12"
+                            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-6 justify-center"
                         >
                             {portalRoles.map((r) => (
                                 <motion.div
                                     key={r.id}
                                     whileHover={{ y: -15, scale: 1.02 }}
                                     onClick={() => {
-                                        setRole(r.id);
-                                        setShowLogin(true);
+                                        if (r.id === 'gate') {
+                                            window.location.href = '/gate/login';
+                                        } else if (r.id === 'payment') {
+                                            window.location.href = '/smart-payment/login';
+                                        } else {
+                                            setRole(r.id);
+                                            setShowLogin(true);
+                                        }
                                     }}
-                                    className="bg-white shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)] cursor-pointer group flex flex-col aspect-square overflow-hidden"
+                                    className="bg-white shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)] cursor-pointer group flex flex-col aspect-[4/5] overflow-hidden"
                                 >
                                     <div className="relative h-2/3 overflow-hidden">
                                         <img 
                                             src={r.image} 
                                             alt={r.title} 
-                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
+                                            className="w-full h-full object-cover object-top group-hover:scale-110 transition-transform duration-700" 
                                         />
                                         <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                                     </div>

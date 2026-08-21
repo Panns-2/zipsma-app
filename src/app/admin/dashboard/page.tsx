@@ -1,9 +1,12 @@
-
-
 'use client';
 
-import { useState, useMemo, useEffect, useCallback, forwardRef, Suspense } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, forwardRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { AlertCircle as AlertCircleIcon, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Banknote, Bell, BellOff, BookCopy, Bus, Calendar as CalendarIcon, CalendarDays, Check, CheckCheck, ChevronDown, ChevronsUpDown, CreditCard, DatabaseZap, DollarSign, Download, Edit, Eye, EyeOff, FilePlus, FileText, HandCoins, HeartPulse, Home, Landmark, LayoutGrid, Loader2, LogOut, Mail, Menu, MessageSquare, Mic, MoreHorizontal, Notebook, Package, Pencil, Percent, Phone, PieChart, PlusCircle, Printer, QrCode, Receipt, RefreshCcw, Save, School as SchoolIcon, Search, Send, Settings, ShieldAlert, ShieldCheck, Sparkles, Trash2, TrendingDown, TrendingUp, Upload, User, UserCircle, UserPlus, Users, UtensilsCrossed, Wallet, X, XCircle } from 'lucide-react';
+
+import { doc, getDoc } from 'firebase/firestore';
+import { exportToCSV } from '@/lib/export-utils';
+
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -14,7 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { LogOut, MoreHorizontal, Edit, Trash2, PlusCircle, LayoutGrid, XCircle, Wallet, Percent, FileText, Landmark, Send, UtensilsCrossed, BookCopy, Calendar as CalendarIcon, CalendarDays, Upload, Loader2, UserPlus, Search, Users, Receipt, AlertCircle as AlertCircleIcon, Banknote, CheckCheck, ShieldCheck, TrendingDown, Package, FilePlus, HandCoins, Notebook, Phone, Mail, UserCircle, Home, HeartPulse, ShieldAlert, School as SchoolIcon, Eye, EyeOff, DatabaseZap, Bus, DollarSign, Settings, Archive, ArchiveRestore, Menu, Check, ChevronsUpDown, Save, ArrowLeft, AlertTriangle, RefreshCcw, Pencil, X, ChevronDown, MessageSquare, Bell, BellOff, Mic } from 'lucide-react';
+
 import { ZipSMALogo } from '@/components/zipsma-logo';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from '@/hooks/use-toast';
@@ -25,8 +28,12 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getStudents, addStudent, deleteStudent, updateStudentDetails, setAttendance, Student, FeeItem, PaymentItem, signOutUser, updateStudentId, sendAnnouncement, getAnnouncementsForAdmin, deleteAnnouncement, Announcement, CalendarEvent, getCalendarEvents, addCalendarEvent, deleteCalendarEvent, StaffId, getStaffIds, addStaffId, deleteStaffId, updateStaffId, Expenditure, getExpenditures, addExpenditure, deleteExpenditure, Debt, getDebts, addDebt, deleteDebt, getStaffDetails, StaffDetails, StaffRole, updateStaffSalary, School, getSchoolDetails, updateSchoolDetails, archiveStudent, archiveStaff, BankAccount, AcademicPeriod, InstallmentStage, getAcademicPeriods, addAcademicPeriod, setAsCurrentPeriod, deleteAcademicPeriod, updateAcademicPeriod, postLedgerTransaction, voidLedgerTransaction, updateLedgerTransaction, LedgerTransaction, getFeeCategories, addFeeCategory, deleteFeeCategory, updateFeeCategory, FeeCategory, postBulkClassLedgerTransaction, postBulkDailyPayments, resetSchoolFinancials, reconcileDailyFees, voidFeeCategoryRecords, isDailyTransaction, calculateInstallmentExpectedAmount, calculateInstallmentOutstandingBalance } from '@/lib/data-store';
+import { getParents, addParent, updateParent, Parent, getStudents, addStudent, deleteStudent, updateStudentDetails, setAttendance, Student, FeeItem, PaymentItem, signOutUser, updateStudentId, sendAnnouncement, getAnnouncementsForAdmin, deleteAnnouncement, Announcement, CalendarEvent, getCalendarEvents, addCalendarEvent, deleteCalendarEvent, StaffId, getStaffIds, addStaffId, deleteStaffId, updateStaffId, Expenditure, getExpenditures, addExpenditure, deleteExpenditure, Debt, getDebts, addDebt, deleteDebt, getStaffDetails, StaffDetails, StaffRole, updateStaffDetails, School, getSchoolDetails, updateSchoolDetails, archiveStudent, archiveStaff, BankAccount, AcademicPeriod, InstallmentStage, getAcademicPeriods, addAcademicPeriod, setAsCurrentPeriod, deleteAcademicPeriod, updateAcademicPeriod, postLedgerTransaction, voidLedgerTransaction, updateLedgerTransaction, LedgerTransaction, getFeeCategories, addFeeCategory, deleteFeeCategory, updateFeeCategory, FeeCategory, postBulkClassLedgerTransaction, postBulkDailyPayments, resetSchoolFinancials, reconcileDailyFees, voidFeeCategoryRecords, isDailyTransaction, calculateInstallmentExpectedAmount, calculateInstallmentOutstandingBalance, calculateStudentTotalBalance, updatePin } from '@/lib/data-store';
+import { allExpenditureCategories } from '@/lib/constants';
+import { MigrationModal } from '@/components/admin-dashboard/migration-modal';
+import { ParentSelector } from '@/components/admin-dashboard/parent-selector';
 import { Calendar } from '@/components/ui/calendar';
+import { DatePicker } from '@/components/ui/date-picker';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { GradientAvatar } from '@/components/gradient-avatar';
@@ -44,17 +51,28 @@ import { CalendarReminderSettings } from '@/components/calendar-reminder-setting
 import { AttendanceReminderSettings } from '@/components/attendance-reminder-settings';
 import { AdminSidebar } from '@/components/admin-sidebar';
 import { AcademicReportsTab } from '@/components/admin-dashboard/academic-reports-tab';
+import QRGenerationTab from '@/components/admin-dashboard/qr-generation-tab';
+import AdminLessonPlansTab from '@/components/admin-dashboard/admin-lesson-plans-tab';
+import { PromoteStudentsTab } from '@/components/admin-dashboard/promote-students-tab';
+import { DebtorsListTab } from '@/components/admin-dashboard/debtors-list-tab';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { generateReceipt } from '@/lib/receipt-utils';
 import { LedgerTable } from '@/components/admin-dashboard/ledger-table';
 import { RecordTransactionModal } from '@/components/admin-dashboard/record-transaction-modal';
+import { ApplyAdmissionBillModal } from '@/components/admin-dashboard/apply-admission-bill-modal';
+import { VoidTransactionModal } from '@/components/admin-dashboard/void-transaction-modal';
+import { FinanceAiInsightsTab } from '@/components/admin-dashboard/finance-ai-insights-tab';
 import { ParentBulkPaymentModal } from '@/components/admin-dashboard/parent-bulk-payment-modal';
 import { ParentBulkMainPaymentModal } from '@/components/admin-dashboard/parent-bulk-main-payment-modal';
 import { FamilyOverviewModal } from '@/components/admin-dashboard/family-overview-modal';
-import { User } from 'lucide-react';
-
-
+import { BulkDailyRatesModal } from '@/components/admin-dashboard/bulk-daily-rates-modal';
+import { BulkFeeReminderModal } from '@/components/admin-dashboard/bulk-fee-reminder-modal';
+import { MonthlyReportConfigModal } from '@/components/admin-dashboard/monthly-report-config-modal';
+import { PrintableMonthlyReport } from '@/components/admin-dashboard/printable-monthly-report';
+import { GenerateTermBillsModal } from '@/components/admin-dashboard/generate-term-bills-modal';
+import { AdmissionBillTab } from '@/components/admin-dashboard/admission-bill-tab';
+import { BudgetingTab } from '@/components/admin-dashboard/budgeting-tab';
 
 const defaultAddStudentForm = {
     studentId: '',
@@ -96,12 +114,12 @@ const defaultEditStudentForm: Omit<Student, 'dateAdded' | 'attendance' | 'isArch
 };
 
 const defaultPaymentForm = { amount: '', notes: '', date: new Date().toISOString().split('T')[0] };
-const defaultCommunicationForm = { recipient: 'all', subject: '', message: '', sendAsSMS: false };
+const defaultCommunicationForm = { recipient: 'all', subject: '', message: '', sendAsSMS: false, sendAsVoice: false };
 const defaultCalendarEventForm = { title: '', date: '', type: 'Event' as 'Event' | 'Holiday' | 'Exam', description: '' };
 const defaultAddStaffForm = { id: '', name: '', role: 'Teacher' as StaffRole, className: '', phone: '', email: '', password: '' };
 
-const STAFF_ROLES: StaffRole[] = ['Teacher', 'Assistant Teacher', 'Administrator', 'Principal', 'Accountant', 'Secretary', 'Security', 'Driver', 'Cook', 'Cleaner', 'Other'];
-const defaultExpenditureForm = { description: '', category: '', amount: '', date: new Date().toISOString().split('T')[0], type: 'General' as 'General' | 'Feeding' | 'Transportation' };
+const STAFF_ROLES: StaffRole[] = ['Teacher', 'Assistant Teacher', 'Administrator', 'Principal', 'Accountant', 'Secretary', 'Gatekeeper', 'Security', 'Cashier', 'Driver', 'Cook', 'Cleaner', 'Other'];
+const defaultExpenditureForm = { description: '', category: '', amount: '', date: new Date().toISOString().split('T')[0] };
 const defaultDebtForm = { creditor: '', description: '', amount: '', date: new Date().toISOString().split('T')[0] };
 const defaultSchoolSettingsForm = { 
     name: '', 
@@ -118,13 +136,12 @@ const defaultSchoolSettingsForm = {
     hubtelMerchantNumber: '',
     sendexaApiKey: '',
     sendexaVoiceCallerId: '',
-    settingsPin: ''
+    arkeselApiKey: '',
+    arkeselVoiceCallerId: '',
+    settingsPin: '',
+    customFeeBlockMessage: ''
 };
 
-
-const generalExpenditureCategories = ["Salaries", "Utilities (Water, Electricity)", "Rent/Mortgage", "Loan Repayment", "Taxes & Levies", "School Supplies (Stationery, etc.)", "Maintenance & Repairs", "Marketing & Advertising", "Technology (Software, Internet)", "Savings to Bank", "Other"];
-const feedingExpenditureCategories = ["Food & Catering", "Kitchen Staff Salaries", "Utensils & Equipment", "Other"];
-const transportationExpenditureCategories = ["Fuel", "Vehicle Maintenance", "Driver Salaries", "Loan Repayment", "Other"];
 
 
 // This is a valid child for TooltipTrigger with asChild
@@ -142,9 +159,6 @@ const StudentInfoTrigger = forwardRef<HTMLDivElement, { student: Student, onClic
     );
 });
 
-
-
-
 function AdminDashboard() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -154,6 +168,7 @@ function AdminDashboard() {
 
     const schoolId = searchParams.get('schoolId');
 
+    const [parents, setParents] = useState<Parent[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [archivedStudents, setArchivedStudents] = useState<Student[]>([]);
     const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
@@ -166,6 +181,7 @@ function AdminDashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [staffSearchQuery, setStaffSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const [userRole, setUserRole] = useState<'admin' | 'accountant'>('admin');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isAttendanceSubmitting, setIsAttendanceSubmitting] = useState<{[key: string]: boolean}>({});
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -177,6 +193,19 @@ function AdminDashboard() {
     const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
     const [isAcademicSetupOpen, setIsAcademicSetupOpen] = useState(false);
     const [isComboboxOpen, setIsComboboxOpen] = useState(false);
+    const [comboboxValue, setComboboxValue] = useState("");
+    
+    useEffect(() => {
+        if (isComboboxOpen && selectedStudentId) {
+            const student = students.find(s => s.studentId === selectedStudentId);
+            if (student) {
+                setComboboxValue(`${student.name} ${student.studentId}`);
+            }
+        } else if (!isComboboxOpen) {
+            setComboboxValue("");
+        }
+    }, [isComboboxOpen, selectedStudentId, students]);
+
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isSettingsAuthOpen, setIsSettingsAuthOpen] = useState(false);
     const [settingsPinInput, setSettingsPinInput] = useState('');
@@ -208,14 +237,14 @@ function AdminDashboard() {
 
     const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
-
     const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false);
+    const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
     const [isSalaryDialogOpen, setIsSalaryDialogOpen] = useState(false);
+    const [isAddStaffDialogOpen, setIsAddStaffDialogOpen] = useState(false);
     const [selectedStudentForEdit, setSelectedStudentForEdit] = useState<Student | null>(null);
     const [selectedStudentForView, setSelectedStudentForView] = useState<Student | null>(null);
-    const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
     const [selectedStaffForSalary, setSelectedStaffForSalary] = useState<StaffId | null>(null);
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newCategoryIsDaily, setNewCategoryIsDaily] = useState(false);
@@ -241,7 +270,19 @@ function AdminDashboard() {
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
     const [editingRateId, setEditingRateId] = useState<string | null>(null);
     const [editingRateValue, setEditingRateValue] = useState<string>('');
-    const [salaryForm, setSalaryForm] = useState({ amount: '' });
+    const [staffDetailsForm, setStaffDetailsForm] = useState({
+        amount: '',
+        ssnitNumber: '',
+        ghanaCardNumber: '',
+        bankName: '',
+        accountNumber: '',
+        emergencyContactName: '',
+        emergencyContactPhone: '',
+        address: '',
+        dateOfHire: '',
+        qualifications: '',
+        contractType: ''
+    });
     const [expenditureForm, setExpenditureForm] = useState(defaultExpenditureForm);
     const [debtForm, setDebtForm] = useState(defaultDebtForm);
     const [schoolSettingsForm, setSchoolSettingsForm] = useState(defaultSchoolSettingsForm);
@@ -250,8 +291,16 @@ function AdminDashboard() {
     const [isBulkFeeDialogOpen, setIsBulkFeeDialogOpen] = useState(false);
     const [selectedBulkStudentIds, setSelectedBulkStudentIds] = useState<string[]>([]);
     const [isRecordTransactionModalOpen, setIsRecordTransactionModalOpen] = useState(false);
+    const [isAdmissionBillModalOpen, setIsAdmissionBillModalOpen] = useState(false);
+    const [transactionToVoid, setTransactionToVoid] = useState<string | null>(null);
     const [isParentBulkModalOpen, setIsParentBulkModalOpen] = useState(false);
     const [isParentBulkMainModalOpen, setIsParentBulkMainModalOpen] = useState(false);
+    const [isBulkDailyRatesModalOpen, setBulkDailyRatesModalOpen] = useState(false);
+    const [isBulkReminderModalOpen, setIsBulkReminderModalOpen] = useState(false);
+    const [isReportConfigModalOpen, setIsReportConfigModalOpen] = useState(false);
+    const [isGenerateTermBillsModalOpen, setIsGenerateTermBillsModalOpen] = useState(false);
+    const [printReportConfig, setPrintReportConfig] = useState<{ month: number, year: number } | null>(null);
+
     const [isFamilyOverviewModalOpen, setIsFamilyOverviewModalOpen] = useState(false);
     const [selectedFamilyStudent, setSelectedFamilyStudent] = useState<Student | null>(null);
     const [transactionModalInitialType, setTransactionModalInitialType] = useState<'fee' | 'payment' | 'adjustment'>('payment');
@@ -387,7 +436,6 @@ function AdminDashboard() {
         }
     };
 
-
     const handleOpenQuickDailyPayment = (studentId: string, category: string) => {
         const student = students.find(s => s.studentId === studentId);
         if (student) setSelectedStudentId(student.studentId);
@@ -395,7 +443,6 @@ function AdminDashboard() {
         const cat = feeCategories.find(c => c.name === category || c.id === category);
         handleOpenTransactionModal('payment', null, cat?.id);
     };
-
 
     const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
     const selectedAttendanceDateFormatted = useMemo(() => new Date(selectedAttendanceDate + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }), [selectedAttendanceDate]);
@@ -461,7 +508,8 @@ function AdminDashboard() {
                 }
             };
 
-            const [allStudents, allEvents, allStaff, allStaffDetails, allExpenditures, allDebts, allPeriods, allAnnouncements, allFeeCategories] = await Promise.all([
+            const [allParents, allStudents, allEvents, allStaff, allStaffDetails, allExpenditures, allDebts, allPeriods, allAnnouncements, allFeeCategories] = await Promise.all([
+                safeFetch(getParents(db, schoolId), "Parents"),
                 safeFetch(getStudents(db, schoolId, true), "Students"),
                 safeFetch(getCalendarEvents(db, schoolId), "Calendar"),
                 safeFetch(getStaffIds(db, schoolId, true), "Staff"),
@@ -473,7 +521,34 @@ function AdminDashboard() {
                 safeFetch(getFeeCategories(db, schoolId), "Fee Categories")
             ]);
 
-            if (schoolData) setSchoolDetails(schoolData);
+            if (schoolData) {
+                setSchoolDetails(schoolData);
+                
+                let role: 'admin' | 'accountant' = 'admin';
+                if (schoolData.adminUid !== user.uid) {
+                    try {
+                        const staffDocRef = doc(db, 'staff', user.uid);
+                        const staffSnap = await getDoc(staffDocRef);
+                        if (staffSnap.exists()) {
+                            const staffData = staffSnap.data();
+                            if (staffData.role === 'Accountant') {
+                                role = 'accountant';
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch staff role", e);
+                    }
+                }
+                
+                setUserRole(role);
+                if (role === 'accountant') {
+                    setActiveTab('fees');
+                }
+            }
+
+            if (allParents) {
+                setParents(allParents);
+            }
 
             if (allStudents) {
                 const activeStudents = allStudents.filter(s => !s.isArchived);
@@ -525,11 +600,13 @@ function AdminDashboard() {
                     hubtelMerchantNumber: schoolData.hubtelMerchantNumber || '',
                     sendexaApiKey: schoolData.sendexaApiKey || '',
                     sendexaVoiceCallerId: schoolData.sendexaVoiceCallerId || '',
-                    settingsPin: schoolData.settingsPin || ''
+                    arkeselApiKey: schoolData.arkeselApiKey || '',
+                    arkeselVoiceCallerId: schoolData.arkeselVoiceCallerId || '',
+                    settingsPin: schoolData.settingsPin || '',
+                    customFeeBlockMessage: schoolData.customFeeBlockMessage || ''
                 });
                 setLogoPreview(schoolData.logoUrl);
             }
-
 
         } catch (error: any) {
             console.error("Critical Data Fetch Error:", error);
@@ -574,7 +651,7 @@ function AdminDashboard() {
             } else {
                 toast({ 
                     title: "Data Loading Error", 
-                    description: "Could not fetch dashboard data. Please verify your internet and database setup.",
+                    description: `Could not fetch dashboard data. Details: ${error.message || String(error)}. Please verify your internet and database setup.`,
                     variant: "destructive",
                     duration: 15000 
                 });
@@ -646,8 +723,25 @@ function AdminDashboard() {
     }, [studentsByClass]);
 
     const uniqueClassNames = useMemo(() => {
-        const classNames = new Set(students.map(s => s.className).filter(Boolean));
-        return Array.from(classNames).sort();
+        const standardClasses = [
+            'Creche', 'Nursery 1', 'Nursery 2', 'KG 1', 'KG 2',
+            'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6',
+            'JHS 1', 'JHS 2', 'JHS 3'
+        ];
+        const classNames = new Set([
+            ...standardClasses,
+            ...students.map(s => s.className).filter(Boolean)
+        ]);
+        
+        return Array.from(classNames).sort((a, b) => {
+            const indexA = standardClasses.indexOf(a);
+            const indexB = standardClasses.indexOf(b);
+            
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a.localeCompare(b);
+        });
     }, [students]);
 
     const filteredStudentsForFees = useMemo(() => {
@@ -657,7 +751,6 @@ function AdminDashboard() {
         }
         return list;
     }, [students, selectedClassForFees]);
-
 
     useEffect(() => {
         if (selectedStudent) {
@@ -831,7 +924,9 @@ function AdminDashboard() {
             emergencyContactPhone: student.emergencyContactPhone || '',
             parentEmail: student.parentEmail || '',
             medicalNotes: student.medicalNotes || '',
-            dailyFees: student.dailyFees || []
+            dailyFees: student.dailyFees || [],
+            feeDiscount: student.feeDiscount || 0,
+            preferredVoiceLanguage: student.preferredVoiceLanguage || 'en-GH'
         }
         setEditStudentForm(studentToEdit as any);
         setPhotoPreview(student.profilePicture);
@@ -847,7 +942,19 @@ function AdminDashboard() {
     const handleOpenSalaryDialog = (staff: StaffId) => {
         const details = staffDetails.find(d => d.id === staff.id);
         setSelectedStaffForSalary(staff);
-        setSalaryForm({ amount: String(details?.salary || '') });
+        setStaffDetailsForm({ 
+            amount: String(details?.salary || ''),
+            ssnitNumber: details?.ssnitNumber || '',
+            ghanaCardNumber: details?.ghanaCardNumber || '',
+            bankName: details?.bankName || '',
+            accountNumber: details?.accountNumber || '',
+            emergencyContactName: details?.emergencyContactName || '',
+            emergencyContactPhone: details?.emergencyContactPhone || '',
+            address: details?.address || '',
+            dateOfHire: details?.dateOfHire || '',
+            qualifications: details?.qualifications || '',
+            contractType: details?.contractType || ''
+        });
         setIsSalaryDialogOpen(true);
     };
 
@@ -881,7 +988,6 @@ function AdminDashboard() {
         }
     };
 
-
     const handleConfirmAddCategory = async () => {
         if (!newCategoryName.trim() || !schoolId) return;
         setIsSubmitting(true);
@@ -889,7 +995,6 @@ function AdminDashboard() {
             await addFeeCategory(db, auth, schoolId, newCategoryName.trim(), newCategoryIsDaily);
             await fetchAdminData();
             toast({ title: "Category Added", description: `"${newCategoryName}" is now available in your fee library.` });
-            
 
             setNewCategoryName('');
             setNewCategoryIsDaily(false);
@@ -932,6 +1037,25 @@ function AdminDashboard() {
         }
     };
 
+    const handleExportFinancialSummary = () => {
+        exportToCSV(`Financial_Summary_${schoolId || 'export'}.csv`, [{
+            'Total Income': overallTotals.totalIncome,
+            'Total Expenditure': overallTotals.totalExpenditure,
+            'Net Savings': overallTotals.netSavings,
+            'Total Debt': overallTotals.totalDebt,
+        }]);
+    };
+
+    const handleExportExpenditures = () => {
+        exportToCSV(`Expenditures_${schoolId || 'export'}.csv`, expenditures.map(e => ({
+            Date: e.date,
+            Description: e.description,
+            Category: e.category,
+            Amount: e.amount,
+            Type: e.type
+        })));
+    };
+
     const handleRecordDailyPayments = async () => {
         if (!schoolId) {
             toast({ title: "Error", description: "School ID missing.", variant: "destructive" });
@@ -940,7 +1064,7 @@ function AdminDashboard() {
 
         const selectedKeys = Object.keys(bulkDailyPaymentsSelection).filter(key => bulkDailyPaymentsSelection[key]);
         if (selectedKeys.length === 0) {
-            toast({ title: "No Records Selected", description: "Please select the daily fee records you want to record payments for.", variant: "destructive" });
+            toast({ title: "No Records Selected", description: "Please select the daily recurring fee records you want to record payments for.", variant: "destructive" });
             return;
         }
 
@@ -981,25 +1105,9 @@ function AdminDashboard() {
         }
     };
 
-
-
-    const handleVoidTransaction = async (transactionId: string) => {
-        if (!selectedStudentId) return;
-        const reason = window.prompt("Reason for voiding this transaction?");
-        if (!reason) return;
-        
-        setIsSubmitting(true);
-        try {
-            await voidLedgerTransaction(db, auth, selectedStudentId, transactionId, reason, schoolId || undefined);
-            await fetchAdminData();
-            toast({ title: "Transaction Voided", description: "The record has been updated." });
-        } catch (error: any) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
-        } finally {
-            setIsSubmitting(false);
-        }
+    const handleVoidTransaction = (transactionId: string) => {
+        setTransactionToVoid(transactionId);
     };
-
 
     const handleOpenEditTransaction = (t: LedgerTransaction) => {
         handleOpenTransactionModal(
@@ -1024,7 +1132,7 @@ function AdminDashboard() {
             await reconcileDailyFees(db, auth, studentId, selectedPeriodId || undefined, schoolId || undefined);
             
             await fetchAdminData();
-            toast({ title: "Rate Updated", description: "The daily fee rate and past records have been synchronized." });
+            toast({ title: "Rate Updated", description: "The daily recurring fee rate and past records have been synchronized." });
         } catch (error: any) {
             toast({ title: "Error", description: error.message || "Failed to update rate.", variant: 'destructive' });
         } finally {
@@ -1054,6 +1162,19 @@ function AdminDashboard() {
             toast({ title: "Sync Error", description: error.message || "Failed to sync all records.", variant: 'destructive' });
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleResetPin = async (isStudent: boolean) => {
+        if (!db || !schoolId || !selectedStudentForEdit) return;
+        try {
+            const idToUpdate = isStudent ? selectedStudentForEdit.studentId : selectedStudentForEdit.parentId;
+            if (!idToUpdate) throw new Error("No ID found to update.");
+            await updatePin(db, schoolId, idToUpdate, isStudent, '1234');
+            // Re-fetch or simply notify
+            toast({ title: 'PIN Reset', description: `${isStudent ? 'Student' : 'Parent'} PIN has been reset to 1234.` });
+        } catch (error: any) {
+            toast({ title: 'Error', description: error.message, variant: 'destructive' });
         }
     };
 
@@ -1112,7 +1233,7 @@ function AdminDashboard() {
                 resolvedId,
                 categoryId, 
                 categoryName, 
-                "Cleared from Daily Fee Category Page",
+                "Cleared from Daily Recurring Fee Category Page",
                 undefined
             );
             
@@ -1171,8 +1292,9 @@ function AdminDashboard() {
         e.preventDefault();
         if (!schoolId) return;
 
-        if (!addStaffForm.email) {
-            toast({ title: "Error", description: "Email address is required.", variant: 'destructive' });
+        const isGatekeeper = addStaffForm.role === 'Gatekeeper' || addStaffForm.role === 'Security';
+        if (!isGatekeeper && !addStaffForm.email) {
+            toast({ title: "Error", description: "Email address is required for this role.", variant: 'destructive' });
             return;
         }
 
@@ -1210,7 +1332,26 @@ function AdminDashboard() {
 
             await fetchAdminData();
             setAddStaffForm(defaultAddStaffForm);
-            setEditingStaffId(null);
+            
+            if (!editingStaffId) {
+                // New staff registration: immediately open HR details
+                setIsAddStaffDialogOpen(false);
+                setSelectedStaffForSalary({
+                    id: data.uid || addStaffForm.id, // Fallback to id if uid is missing
+                    name: addStaffForm.name,
+                    schoolId: schoolId,
+                    role: addStaffForm.role,
+                    dateAdded: new Date().toISOString()
+                } as any);
+                setStaffDetailsForm({ 
+                    amount: '', ssnitNumber: '', ghanaCardNumber: '', bankName: '', accountNumber: '', 
+                    emergencyContactName: '', emergencyContactPhone: '', address: '', dateOfHire: '', qualifications: '', contractType: '' 
+                });
+                setIsSalaryDialogOpen(true);
+            } else {
+                setEditingStaffId(null);
+                setIsAddStaffDialogOpen(false);
+            }
         } catch (error: any) {
             toast({ title: "Error", description: error.message, variant: 'destructive' });
         } finally {
@@ -1223,9 +1364,21 @@ function AdminDashboard() {
         if (!selectedStaffForSalary || !schoolId) return;
         setIsSubmitting(true);
         try {
-            await updateStaffSalary(db, auth, schoolId, selectedStaffForSalary.id, Number(salaryForm.amount));
+            await updateStaffDetails(db, auth, schoolId, selectedStaffForSalary.id, {
+                salary: Number(staffDetailsForm.amount),
+                ssnitNumber: staffDetailsForm.ssnitNumber,
+                ghanaCardNumber: staffDetailsForm.ghanaCardNumber,
+                bankName: staffDetailsForm.bankName,
+                accountNumber: staffDetailsForm.accountNumber,
+                emergencyContactName: staffDetailsForm.emergencyContactName,
+                emergencyContactPhone: staffDetailsForm.emergencyContactPhone,
+                address: staffDetailsForm.address,
+                dateOfHire: staffDetailsForm.dateOfHire,
+                qualifications: staffDetailsForm.qualifications,
+                contractType: staffDetailsForm.contractType as any
+            });
             await fetchAdminData();
-            toast({ title: "Success", description: `Salary updated for ${selectedStaffForSalary.name}.` });
+            toast({ title: "Success", description: `Staff details updated for ${selectedStaffForSalary.name}.` });
             setIsSalaryDialogOpen(false);
             setSelectedStaffForSalary(null);
         } catch (error: any) {
@@ -1301,8 +1454,6 @@ function AdminDashboard() {
         }
     };
 
-    
-
     const handleSaveSchoolSettings = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!schoolId) return;
@@ -1312,14 +1463,14 @@ function AdminDashboard() {
                 name, schoolPhone, schoolEmail, momoNumber, momoName, 
                 bankAccounts, hubtelSmsClientId, hubtelSmsClientSecret,
                 hubtelSenderId, hubtelPaymentClientId, hubtelPaymentClientSecret,
-                hubtelMerchantNumber, sendexaApiKey, sendexaVoiceCallerId, settingsPin 
+                hubtelMerchantNumber, sendexaApiKey, sendexaVoiceCallerId, arkeselApiKey, arkeselVoiceCallerId, settingsPin, customFeeBlockMessage 
             } = schoolSettingsForm;
             
             await updateSchoolDetails(db, storage, auth, schoolId, { 
                 name, schoolPhone, schoolEmail, momoNumber, momoName, 
                 bankAccounts, hubtelSmsClientId, hubtelSmsClientSecret,
                 hubtelSenderId, hubtelPaymentClientId, hubtelPaymentClientSecret,
-                hubtelMerchantNumber, sendexaApiKey, sendexaVoiceCallerId, settingsPin 
+                hubtelMerchantNumber, sendexaApiKey, sendexaVoiceCallerId, arkeselApiKey, arkeselVoiceCallerId, settingsPin, customFeeBlockMessage 
             }, logoFile);
     
             await fetchAdminData();
@@ -1331,8 +1482,6 @@ function AdminDashboard() {
             setIsSubmitting(false);
         }
     };        
-
-
 
     const handleToggleAttendance = async (studentId: string, isChecked: boolean) => {
         setIsAttendanceSubmitting(prev => ({...prev, [studentId]: true}));
@@ -1407,7 +1556,34 @@ function AdminDashboard() {
         }
 
         // --- Push Notification & SMS Logic ---
-        toast({ title: communicationForm.sendAsSMS ? "Sending SMS & Notification..." : "Sending Notification...", description: "Please wait." });
+        toast({ title: communicationForm.sendAsVoice ? "Sending Voice SMS..." : (communicationForm.sendAsSMS ? "Sending SMS & Notification..." : "Sending Notification..."), description: "Please wait." });
+        
+        let voiceSent = false;
+        if (communicationForm.sendAsVoice) {
+             try {
+                const voiceResponse = await fetch('/api/voice/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        schoolId: schoolId,
+                        message: communicationForm.message,
+                        recipient: communicationForm.recipient === 'all' ? 'all' : 'specific',
+                        specificParent: communicationForm.recipient !== 'all' ? communicationForm.recipient : undefined
+                    })
+                });
+                
+                const voiceResult = await voiceResponse.json();
+                if (voiceResponse.ok) {
+                    toast({ title: "Voice SMS Queued", description: voiceResult.message });
+                    voiceSent = true;
+                } else {
+                    toast({ title: "Voice SMS Failed", description: voiceResult.error, variant: "destructive" });
+                }
+             } catch (error) {
+                 toast({ title: "Voice API Error", description: "Network error sending Voice SMS.", variant: "destructive" });
+             }
+        }
+
         try {
             const smsResponse = await fetch('/api/sms/send', {
                 method: 'POST',
@@ -1426,38 +1602,42 @@ function AdminDashboard() {
             const smsResult = await smsResponse.json();
 
             if (smsResponse.ok) {
-                toast({
-                    title: communicationForm.sendAsSMS ? "SMS & Notification Sent" : "Notification Sent",
-                    description: smsResult.message || `Message was sent successfully.`,
-                    variant: "default"
-                });
-            } else {
+                if (!communicationForm.sendAsVoice) {
                     toast({
-                    title: "Sending Failed",
-                    description: smsResult.error || "The message could not be sent. Please check your credentials and try again.",
+                        title: communicationForm.sendAsSMS ? "SMS & Notification Sent" : "Notification Sent",
+                        description: smsResult.message || `Message was sent successfully.`,
+                        variant: "default"
+                    });
+                }
+            } else {
+                if (!communicationForm.sendAsVoice || communicationForm.sendAsSMS) {
+                    toast({
+                        title: "Sending Failed",
+                        description: smsResult.error || "The message could not be sent. Please check your credentials and try again.",
+                        variant: "destructive",
+                        duration: 10000
+                    });
+                }
+            }
+        } catch (error: any) {
+            console.error("Failed to make API request:", error);
+            if (!communicationForm.sendAsVoice || communicationForm.sendAsSMS) {
+                toast({
+                    title: "API Error",
+                    description: "A network or server error occurred while trying to send the message.",
                     variant: "destructive",
                     duration: 10000
                 });
             }
-        } catch (error: any) {
-            console.error("Failed to make API request:", error);
-            toast({
-                title: "API Error",
-                description: "A network or server error occurred while trying to send the message.",
-                variant: "destructive",
-                duration: 10000
-            });
         }
 
-
         // Reset the form only if at least one operation was attempted
-        if (announcementSent || communicationForm.sendAsSMS) {
+        if (announcementSent || communicationForm.sendAsSMS || voiceSent) {
              setCommunicationForm(defaultCommunicationForm);
         }
         
         setIsSubmitting(false);
     };
-      
 
     const handleAddCalendarEvent = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1492,29 +1672,26 @@ function AdminDashboard() {
         }
     }
     
-    const handleAddExpenditure = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleAddExpenditure = async (formToSubmit: typeof defaultExpenditureForm) => {
         if (!schoolId) return;
         setIsSubmitting(true);
         const newExpenditure = {
-            description: expenditureForm.description,
-            category: expenditureForm.category,
-            amount: Number(expenditureForm.amount),
-            date: expenditureForm.date,
-            type: expenditureForm.type,
+            description: formToSubmit.description,
+            category: formToSubmit.category,
+            amount: Number(formToSubmit.amount),
+            date: formToSubmit.date,
             periodId: selectedPeriodId || undefined
         };
         try {
             await addExpenditure(db, auth, schoolId, newExpenditure);
             toast({ title: "Success", description: "Expenditure recorded." });
-            setExpenditureForm(defaultExpenditureForm);
-            await fetchAdminData();
-        } catch (error) {
-            toast({ title: "Error", description: "Could not add expenditure.", variant: 'destructive' });
+        } catch (error: any) {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
         } finally {
             setIsSubmitting(false);
+            await fetchAdminData();
         }
-    }
+    };
 
     const handleAddDebt = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1556,8 +1733,6 @@ function AdminDashboard() {
             bankAccounts: prev.bankAccounts.filter((_, i) => i !== index)
         }));
     };
-
-
 
     const ledgerTotals = useMemo(() => {
         if (!selectedStudent) return { billed: 0, paid: 0, balance: 0, expected: 0, installmentBalance: 0 };
@@ -1654,10 +1829,16 @@ function AdminDashboard() {
         let totalArrears = 0;
 
         students.forEach(student => {
-            let studentArrears = 0;
+            const balanceInfo = calculateStudentTotalBalance(student, academicPeriods, selectedPeriodId || undefined, feeCategories);
+            if (balanceInfo.totalOutstanding > 0) {
+                totalArrears += balanceInfo.totalOutstanding;
+            }
+
             if (student.ledger) {
                 student.ledger.forEach(t => {
                     if (t.isVoided) return;
+
+                    // Only add to period-specific totals if it matches the current filter
                     if (!selectedPeriodId || t.periodId === selectedPeriodId) {
                         const displayCat = getDisplayCategory(t.category || '');
                         if (!byCategory[displayCat]) {
@@ -1666,13 +1847,8 @@ function AdminDashboard() {
                         
                         byCategory[displayCat].billed += (Number(t.debit) || 0);
                         byCategory[displayCat].paid += (Number(t.credit) || 0);
-                        
-                        studentArrears += ((Number(t.debit) || 0) - (Number(t.credit) || 0));
                     }
                 });
-            }
-            if (studentArrears > 0) {
-                totalArrears += studentArrears;
             }
         });
 
@@ -1688,9 +1864,8 @@ function AdminDashboard() {
             totalDebt,
             totalArrears,
         };
-    }, [students, expenditures, debts, selectedPeriodId, feeCategories]);
+    }, [students, expenditures, debts, selectedPeriodId, feeCategories, academicPeriods]);
 
-    
     const chartData = useMemo(() => {
         const incomeVsExpenditure = [
             { name: 'Total Income', value: overallTotals.totalIncome, fill: 'hsl(var(--success))' },
@@ -1700,11 +1875,8 @@ function AdminDashboard() {
         const arrearsByClass = Object.entries(studentsByClass)
             .map(([className, classStudents]) => {
                 const totalArrears = classStudents.reduce((sum, student) => {
-                    const balance = (student.ledger || [])
-                        .filter(t => !t.isVoided && (!selectedPeriodId || t.periodId === selectedPeriodId))
-                        .reduce((acc, t) => acc + ((t.debit || 0) - (t.credit || 0)), 0);
-                    
-                    return sum + (balance > 0 ? balance : 0);
+                    const balanceInfo = calculateStudentTotalBalance(student, academicPeriods, selectedPeriodId || undefined, feeCategories);
+                    return sum + (balanceInfo.totalOutstanding > 0 ? balanceInfo.totalOutstanding : 0);
                 }, 0);
                 return { name: className, arrears: totalArrears };
             })
@@ -1712,146 +1884,43 @@ function AdminDashboard() {
             .sort((a,b) => b.arrears - a.arrears);
 
         return { incomeVsExpenditure, arrearsByClass };
-    }, [overallTotals, studentsByClass, selectedPeriodId]);
+    }, [overallTotals, studentsByClass, selectedPeriodId, academicPeriods, feeCategories]);
 
-    const families = useMemo(() => {
-        const familyGroups: Record<string, { 
-            children: (Student & { ledgerBalance: number })[], 
-            ledger: (LedgerTransaction & { studentName: string })[], 
-            totals: { 
-                main: { billed: number, paid: number }, 
-                daily: { billed: number, paid: number }, 
-                balance: number,
-                expected: number,
-                installmentBalance: number
-            } 
-        }> = {};
-        
-        const currentPeriod = academicPeriods.find(p => p.id === selectedPeriodId);
+    const monthlyFinancialData = useMemo(() => {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const data = months.map(m => ({ name: m, Income: 0, Expenditure: 0 }));
+
+        const currentYearStr = new Date().getFullYear().toString();
 
         students.forEach(student => {
-            const pid = student.parentId?.trim().toUpperCase();
-            if (!pid) return;
-
-            if (!familyGroups[pid]) {
-                familyGroups[pid] = { 
-                    children: [], 
-                    ledger: [],
-                    totals: {
-                        main: { billed: 0, paid: 0 },
-                        daily: { billed: 0, paid: 0 },
-                        balance: 0,
-                        expected: 0,
-                        installmentBalance: 0
+            if (student.ledger) {
+                student.ledger.forEach(t => {
+                    if (t.isVoided) return;
+                    if (t.date && t.date.startsWith(currentYearStr)) {
+                        const monthIndex = new Date(t.date).getMonth();
+                        if (monthIndex >= 0 && monthIndex < 12) {
+                            data[monthIndex].Income += (Number(t.credit) || 0);
+                        }
                     }
-                };
-            }
-            
-            const family = familyGroups[pid];
-            const studentWithBalance = { ...student, ledgerBalance: 0 };
-            family.children.push(studentWithBalance);
-
-            // 1. Ledger-based Main/Daily calculations
-            const fullLedger = (student.ledger || []).filter(t => !t.isVoided);
-            const sortedPeriodsForIndex = [...academicPeriods].reverse();
-            const currentPeriodIndex = sortedPeriodsForIndex.findIndex(p => p.id === selectedPeriodId);
-
-            const dailyLedger = fullLedger.filter(t => isDailyTransaction(t, feeCategories));
-            const mainLedger = fullLedger.filter(t => !isDailyTransaction(t, feeCategories));
-
-            const getPeriodBalances = (ledger: LedgerTransaction[]) => {
-                const prevTransactions = ledger.filter(t => {
-                    if (!t.periodId) return false;
-                    const tPeriodIndex = sortedPeriodsForIndex.findIndex(p => p.id === t.periodId);
-                    return tPeriodIndex < currentPeriodIndex && t.periodId !== selectedPeriodId;
                 });
-
-                const bf = prevTransactions.reduce((sum, t) => sum + (Number(t.debit) || 0) - (Number(t.credit) || 0), 0);
-                const currentTransactions = ledger.filter(t => !selectedPeriodId || t.periodId === selectedPeriodId);
-                
-                const billed = currentTransactions.reduce((sum, t) => sum + (Number(t.debit) || 0), 0);
-                const paid = currentTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
-                
-                const adminBilled = (bf > 0 ? bf : 0) + billed;
-                const adminPaid = (bf < 0 ? Math.abs(bf) : 0) + paid;
-                const balance = adminBilled - adminPaid;
-
-                return { bf, billed: adminBilled, paid: adminPaid, balance };
-            };
-
-            const dailyData = getPeriodBalances(dailyLedger);
-            const mainData = getPeriodBalances(mainLedger);
-
-            // 2. Attendance-based daily accrued (matches student ledger view)
-            const attendance = student.attendance || [];
-            const daysPresentInPeriod = attendance.filter(a => a.attended && (!selectedPeriodId || a.periodId === selectedPeriodId)).length;
-            let dailyAccruedInfo = 0;
-            feeCategories.filter(c => c.isDaily).forEach(cat => {
-                const studentRate = (student.dailyFees || []).find(f => f.categoryId === cat.id)?.rate || 0;
-                dailyAccruedInfo += daysPresentInPeriod * Number(studentRate);
-            });
-
-            const childBalance = mainData.balance + dailyAccruedInfo;
-            studentWithBalance.ledgerBalance = childBalance;
-
-            // 3. Installment Logic per student
-            if (currentPeriod) {
-                const installment = calculateInstallmentExpectedAmount(student, currentPeriod, feeCategories);
-                family.totals.expected += installment;
-            } else {
-                family.totals.expected += mainData.billed;
-            }
-
-            family.totals.main.billed += mainData.billed;
-            family.totals.main.paid += mainData.paid;
-            family.totals.daily.billed += dailyAccruedInfo;
-            family.totals.daily.paid += dailyData.paid;
-            family.totals.balance += childBalance;
-
-            // 4. Collect transactions for family ledger
-            const childTransactions = (student.ledger || [])
-                .filter(t => !t.isVoided && (!selectedPeriodId || t.periodId === selectedPeriodId))
-                .map(t => ({ ...t, studentName: student.name }));
-            family.ledger.push(...childTransactions);
-        });
-
-        // Finalize family-level installment balance
-        Object.values(familyGroups).forEach(f => {
-            f.totals.installmentBalance = Math.max(0, f.totals.expected - f.totals.main.paid);
-            
-            // Sort family ledgers by date
-            f.ledger.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            f.ledger = f.ledger.slice(0, 10); // Keep last 10 for performance/visibility
-        });
-
-        return familyGroups;
-    }, [students, selectedPeriodId, academicPeriods, feeCategories]);
-
-    const expenditureTotals = useMemo(() => {
-        return expenditures.reduce((acc, exp) => {
-            acc[exp.type] = (acc[exp.type] || 0) + exp.amount;
-            return acc;
-        }, {} as Record<string, number>);
-    }, [expenditures]);
-
-    const incomeTotals = useMemo(() => {
-        const totals: Record<string, number> = {
-            General: 0,
-            Feeding: 0,
-            Transportation: 0
-        };
-        Object.entries(overallTotals.byCategory).forEach(([name, data]) => {
-            const nameLower = name.toLowerCase().trim();
-            if (nameLower.includes('feeding')) {
-                totals.Feeding = (totals.Feeding || 0) + data.paid;
-            } else if (nameLower.includes('transport') || nameLower.includes('bus') || nameLower.includes('shuttle') || nameLower.includes('vehicle')) {
-                totals.Transportation = (totals.Transportation || 0) + data.paid;
-            } else {
-                totals.General = (totals.General || 0) + data.paid;
             }
         });
-        return totals;
-    }, [overallTotals]);
+
+        expenditures.forEach(exp => {
+            if (exp.date && exp.date.startsWith(currentYearStr)) {
+                const monthIndex = new Date(exp.date).getMonth();
+                if (monthIndex >= 0 && monthIndex < 12) {
+                    data[monthIndex].Expenditure += (Number(exp.amount) || 0);
+                }
+            }
+        });
+
+        const currentMonthIndex = new Date().getMonth();
+        const monthsToShow = Math.max(5, currentMonthIndex + 1);
+        return data.slice(0, monthsToShow);
+    }, [students, expenditures]);
+
+
 
     const dailyCategoriesForModal = useMemo(() => {
         const list = [...feeCategories.filter(c => c.isDaily)];
@@ -1904,7 +1973,7 @@ function AdminDashboard() {
                     const targetIdLower = catIdLower;
                     const targetNameLower = name.toLowerCase().trim();
                     
-                    // Use isDailyTransaction to verify this is a daily fee transaction
+                    // Use isDailyTransaction to verify this is a daily recurring fee transaction
                     const isDaily = isDailyTransaction(t, feeCategories);
                     if (!isDaily) return false;
 
@@ -1955,7 +2024,7 @@ function AdminDashboard() {
                 }
             };
 
-            // Process all dynamic daily fee categories using the official category list
+            // Process all dynamic daily recurring fee categories using the official category list
             feeCategories.filter(c => c.isDaily).forEach(cat => {
                 const normName = cat.name.toLowerCase().trim();
                 const normId = cat.id;
@@ -1975,6 +2044,33 @@ function AdminDashboard() {
         if (selectedClassForFees === 'all') return dailyFeeSummary;
         return dailyFeeSummary.filter(s => s.className === selectedClassForFees);
     }, [dailyFeeSummary, selectedClassForFees]);
+
+    const dailyRevenueSummary = useMemo(() => {
+        const dateMap: Record<string, { date: string, mainFeesAmount: number, dailyFeesAmount: number, totalAmount: number }> = {};
+
+        students.forEach(student => {
+            if (student.ledger) {
+                student.ledger.forEach(t => {
+                    if (!t.isVoided && t.type === 'payment' && t.credit > 0) {
+                        const dateStr = t.date.split('T')[0];
+                        
+                        if (!dateMap[dateStr]) {
+                            dateMap[dateStr] = { date: dateStr, mainFeesAmount: 0, dailyFeesAmount: 0, totalAmount: 0 };
+                        }
+
+                        if (isDailyTransaction(t, feeCategories)) {
+                            dateMap[dateStr].dailyFeesAmount += t.credit;
+                        } else {
+                            dateMap[dateStr].mainFeesAmount += t.credit;
+                        }
+                        dateMap[dateStr].totalAmount += t.credit;
+                    }
+                });
+            }
+        });
+
+        return Object.values(dateMap).sort((a, b) => b.date.localeCompare(a.date));
+    }, [students, feeCategories]);
 
     const allFeeCategories = useMemo(() => {
         const combined = [...feeCategories];
@@ -2016,9 +2112,23 @@ function AdminDashboard() {
         );
     }
 
+    if (printReportConfig) {
+        return (
+            <PrintableMonthlyReport
+                month={printReportConfig.month}
+                year={printReportConfig.year}
+                students={students}
+                expenditures={expenditures}
+                schoolDetails={schoolDetails}
+                feeCategories={feeCategories}
+                onClose={() => setPrintReportConfig(null)}
+            />
+        );
+    }
+
     return (
             <>
-                <div className="h-screen w-full flex bg-background text-foreground overflow-hidden">
+                <div className="h-screen w-full flex bg-background text-foreground overflow-hidden print:h-auto print:overflow-visible print:bg-white">
                     <AdminSidebar
                         activeTab={activeTab}
                         setActiveTab={handleSetActiveTab}
@@ -2028,9 +2138,10 @@ function AdminDashboard() {
                         schoolName={schoolDetails?.name}
                         schoolId={schoolId ?? undefined}
                         logoUrl={schoolDetails?.logoUrl}
+                        userRole={userRole}
                     />
-                    <div className="flex flex-col flex-1 min-w-0">
-                        <header className="bg-card shadow-sm sticky top-0 z-40 border-b flex flex-wrap lg:flex-nowrap items-center px-4 py-2 gap-y-2 gap-x-4 min-h-[4rem]">
+                    <div className="flex flex-col flex-1 min-w-0 print:block print:h-auto">
+                        <header className="bg-card shadow-sm sticky top-0 z-40 border-b flex flex-wrap lg:flex-nowrap items-center px-4 py-2 gap-y-2 gap-x-4 min-h-[4rem] print:hidden">
                         {/* Logo and Name Wrapper */}
                         <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0 order-1">
                             {schoolDetails?.logoUrl ? (
@@ -2078,7 +2189,6 @@ function AdminDashboard() {
                                 </SelectContent>
                             </Select>
                         </div>
-
                         {/* Sidebar Trigger */}
                         <div className="flex-shrink-0 order-2 lg:order-3">
                             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
@@ -2107,9 +2217,9 @@ function AdminDashboard() {
                         </div>
                     </header>
 
-                    <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/50 dark:bg-transparent relative pb-8">
+                    <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/50 dark:bg-transparent relative pb-8 print:flex-none print:h-auto print:overflow-visible print:bg-white">
                         {/* Hero Banner */}
-                        <div className="w-full h-32 md:h-48 lg:h-56 relative mb-6">
+                        <div className="w-full h-32 md:h-48 lg:h-56 relative mb-6 print:hidden">
                             <Image 
                                 src="/cover-placeholder.png" 
                                 alt="School Cover" 
@@ -2119,7 +2229,7 @@ function AdminDashboard() {
                             />
                         </div>
                         
-                        <div className="px-4 md:px-6 lg:px-8 -mt-20 md:-mt-28 relative z-10 drop-shadow-2xl">
+                        <div className="px-4 md:px-6 lg:px-8 -mt-20 md:-mt-28 relative z-10 drop-shadow-2xl print:mt-0 print:px-0 print:drop-shadow-none">
                             <AnimatePresence mode="wait">
                             <motion.div
                                 key={activeTab}
@@ -2146,7 +2256,7 @@ function AdminDashboard() {
                                     ) : (
                                         <>
                                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
-                                            <Card>
+                                            {userRole === "admin" && <Card>
                                                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                                     <CardTitle className="text-heading-md">Total Students</CardTitle>
                                                     <Users className="h-4 w-4 text-muted-foreground" />
@@ -2155,7 +2265,7 @@ function AdminDashboard() {
                                                     <div className="text-2xl font-bold">{students.length}</div>
                                                     <p className="text-xs text-muted-foreground">Currently enrolled</p>
                                                 </CardContent>
-                                            </Card>
+                                            </Card>}
                                             <Card>
                                                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                                     <CardTitle className="text-heading-md">Total Arrears</CardTitle>
@@ -2346,9 +2456,16 @@ function AdminDashboard() {
                                         <CardTitle className="text-heading-md">Student List</CardTitle>
                                         <CardDescription>A list of all active students currently enrolled.</CardDescription>
                                     </div>
-                                    <Button onClick={() => setIsAddStudentDialogOpen(true)}>
-                                        <PlusCircle className="mr-2 h-4 w-4" /> Add New Student
-                                    </Button>
+                                    <div className="flex gap-2">
+                                        {students.some(s => s.parentName) && (
+                                            <Button variant="outline" onClick={() => setIsMigrationModalOpen(true)}>
+                                                Migrate Parent Data
+                                            </Button>
+                                        )}
+                                        <Button onClick={() => setIsAddStudentDialogOpen(true)}>
+                                            <PlusCircle className="mr-2 h-4 w-4" /> Add New Student
+                                        </Button>
+                                    </div>
                                 </CardHeader>
                                 <CardContent>
                                     {isLoading ? (
@@ -2403,6 +2520,7 @@ function AdminDashboard() {
                                                         <TableHead className="w-[60px]">Photo</TableHead>
                                                         <TableHead>Student</TableHead>
                                                         <TableHead>Class Level</TableHead>
+                                                        <TableHead className="text-center">Fee Exemption</TableHead>
                                                         <TableHead className="text-right">Actions</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
@@ -2412,9 +2530,10 @@ function AdminDashboard() {
                                                             <TableCell>
                                                                 <div className="flex items-center gap-3">
                                                                     {(() => {
-                                                                        const pId = student.parentPhone || student.parentId || student.parentName;
+                                                                        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
+                                                                        const pId = normalizeStr(student.parentPhone) || normalizeStr(student.parentId) || normalizeStr(student.parentName);
                                                                         const hasSiblings = pId ? students.filter(s => {
-                                                                            const spId = s.parentPhone || s.parentId || s.parentName;
+                                                                            const spId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
                                                                             return spId === pId && s.studentId !== student.studentId;
                                                                         }).length > 0 : false;
 
@@ -2467,6 +2586,24 @@ function AdminDashboard() {
                                                                 </Tooltip>
                                                             </TableCell>
                                                             <TableCell>{student.className}</TableCell>
+                                                            <TableCell className="text-center">
+                                                                <Checkbox 
+                                                                    checked={!!student.feeExemption}
+                                                                    onCheckedChange={async (checked) => {
+                                                                        if (!db || !storage || !auth || !student.id) return;
+                                                                        try {
+                                                                            await updateStudentDetails(db, storage, auth, student.id, { feeExemption: !!checked }, null, schoolId || undefined);
+                                                                            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, feeExemption: !!checked } : s));
+                                                                            toast({
+                                                                                title: checked ? 'Exemption Granted' : 'Exemption Removed',
+                                                                                description: `Fee exemption has been ${checked ? 'granted to' : 'removed from'} ${student.name}.`,
+                                                                            });
+                                                                        } catch (error) {
+                                                                            toast({ title: 'Error', description: 'Failed to update fee exemption status.', variant: 'destructive' });
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            </TableCell>
                                                             <TableCell className="text-right">
                                                                 <div className="flex items-center justify-end gap-1">
                                                                     <TooltipProvider>
@@ -2493,6 +2630,7 @@ function AdminDashboard() {
                                                                             <DropdownMenuItem onClick={() => handleOpenViewDialog(student)}><Eye className="mr-2 h-4 w-4" /> View Details</DropdownMenuItem>
                                                                             <DropdownMenuItem onClick={() => handleOpenEditDialog(student)}><Edit className="mr-2 h-4 w-4" /> Edit Details</DropdownMenuItem>
                                                                             <DropdownMenuItem onClick={() => handleSelectStudentForFeeds(student.studentId)}><Wallet className="mr-2 h-4 w-4"/> Manage All Fees</DropdownMenuItem>
+                                                                            <DropdownMenuItem onClick={() => { setSelectedStudentId(student.studentId); setIsGenerateTermBillsModalOpen(true); }}><Printer className="mr-2 h-4 w-4" /> Print Term Bill</DropdownMenuItem>
                                                                             <DropdownMenuSeparator />
                                                                             <DropdownMenuItem 
                                                                                 onClick={() => handleToggleMuteReminders(student)}
@@ -2522,269 +2660,11 @@ function AdminDashboard() {
                                 </CardContent>
                             </Card>
                         )}
-                        
-                        {activeTab === 'families' && (
-                            <div className="space-y-6">
-                                {/* Glassmorphic Header Card - Light Mode */}
-                                <div className="relative overflow-hidden rounded-3xl border border-white bg-white/60 p-8 shadow-xl backdrop-blur-xl">
-                                    <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-                                    <div className="absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-blue-500/5 blur-3xl" />
-                                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                        <div>
-                                            <h2 className="text-3xl font-black tracking-tight text-slate-900 mb-2">Family Financial Portals</h2>
-                                            <p className="text-slate-600 font-medium max-w-md">
-                                                Comprehensive financial oversight for family groups. Track aggregated balances, fee distributions, and payment histories across all siblings.
-                                            </p>
-                                        </div>
-                                        <div className="flex items-center gap-4 bg-white/40 p-4 rounded-2xl border border-white shadow-sm backdrop-blur-md">
-                                            <div className="p-3 bg-primary/10 rounded-xl">
-                                                <Users className="w-8 h-8 text-primary" />
-                                            </div>
-                                            <div>
-                                                <div className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-1">Total Families</div>
-                                                <div className="text-3xl font-black text-slate-900">{Object.keys(families).length}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                {Object.keys(families).length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-20 bg-white/40 rounded-3xl border border-dashed border-slate-200 shadow-sm">
-                                        <Users className="w-16 h-16 text-slate-400 mb-4" />
-                                        <p className="text-xl font-medium text-slate-600">No family groupings found.</p>
-                                        <p className="text-sm text-slate-500">Assign Parent IDs to students to enable family-wide reporting.</p>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 gap-8">
-                                        {Object.entries(families).map(([parentId, familyData]) => {
-                                            const { children, totals } = familyData;
-                                            const guardian = children[0];
-                                            
-                                            return (
-                                                <div key={parentId} className="group relative transition-all duration-500 hover:-translate-y-1">
-                                                    <div className="absolute -inset-0.5 rounded-[2rem] bg-gradient-to-br from-primary/20 to-blue-600/20 opacity-0 blur transition duration-500 group-hover:opacity-100" />
-                                                    <div className="relative flex flex-col rounded-[2rem] border border-white bg-white/90 shadow-2xl backdrop-blur-xl overflow-hidden">
-                                                        {/* Family Card Header */}
-                                                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between p-8 border-b border-slate-100 bg-slate-50/30">
-                                                            <div className="flex items-center gap-5">
-                                                                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-lg shadow-slate-200 border border-slate-200 transition-transform group-hover:scale-110 duration-500">
-                                                                    <Users className="h-8 w-8 text-primary" />
-                                                                </div>
-                                                                <div>
-                                                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">Family: {parentId}</h3>
-                                                                    <div className="flex items-center gap-3 mt-1">
-                                                                        <span className="flex items-center gap-1 text-sm text-slate-600 font-bold bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-                                                                            <Users className="w-3.5 h-3.5" /> {children.length} {children.length === 1 ? 'Child' : 'Children'}
-                                                                        </span>
-                                                                        <span className="text-slate-400 text-sm">•</span>
-                                                                        <span className="text-sm text-slate-600 font-bold italic">Guardian: {guardian.parentName}</span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <div className="mt-6 md:mt-0 text-left md:text-right">
-                                                                <div className="text-xs font-black text-slate-800 uppercase tracking-widest mb-1">Combined Arrears</div>
-                                                                <div className={cn(
-                                                                    "text-4xl font-black tracking-tighter transition-colors duration-300",
-                                                                    totals.balance > 0 ? "text-red-500" : "text-emerald-500"
-                                                                )}>
-                                                                    GH¢{Math.abs(totals.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                                    <span className="text-lg ml-2 opacity-60 font-black tracking-normal">
-                                                                        {totals.balance > 0 ? 'DUE' : 'BAL'}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <CardContent className="p-8">
-                                                            {/* Financial Breakdown Grid */}
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                                                                {/* Main Fees Card */}
-                                                                <div className="relative overflow-hidden rounded-2xl bg-slate-50/50 border border-slate-100 p-6 transition-all hover:bg-white hover:shadow-md group/card">
-                                                                    <div className="flex items-center justify-between mb-4">
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className="p-2 bg-blue-50 rounded-lg text-blue-600 border border-blue-100">
-                                                                                <Landmark className="w-5 h-5" />
-                                                                            </div>
-                                                                            <span className="font-bold text-slate-700 tracking-tight">Main School Fees</span>
-                                                                        </div>
-                                                                        <Badge variant="outline" className="border-blue-200 text-blue-600 bg-blue-50/50">
-                                                                            Aggregated
-                                                                        </Badge>
-                                                                    </div>
-                                                                    <div className="space-y-3">
-                                                                        <div className="flex justify-between items-center text-sm">
-                                                                            <span className="text-slate-700 font-semibold">Total Billed</span>
-                                                                            <span className="text-slate-900 font-black">GH¢{totals.main.billed.toFixed(2)}</span>
-                                                                        </div>
-                                                                        {academicPeriods.find(p => p.id === selectedPeriodId)?.installmentPlan?.length ? (
-                                                                            <div className="flex justify-between items-center text-sm">
-                                                                                <span className="text-slate-700 font-semibold text-[10px] uppercase tracking-wider">Expected by Now</span>
-                                                                                <span className="text-slate-900 font-black">GH¢{totals.expected.toFixed(2)}</span>
-                                                                            </div>
-                                                                        ) : null}
-                                                                        <div className="flex justify-between items-center text-sm pb-3 border-b border-slate-100">
-                                                                            <span className="text-slate-700 font-semibold">Total Paid</span>
-                                                                            <span className="text-emerald-600 font-black">GH¢{totals.main.paid.toFixed(2)}</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center pt-1">
-                                                                            <div className="flex flex-col">
-                                                                                <span className="text-xs font-black text-slate-600 uppercase tracking-wider">Net Main Balance</span>
-                                                                                {totals.installmentBalance > 0 && (
-                                                                                    <span className="text-[10px] text-amber-600 font-bold">Installment Shortfall: GH¢{totals.installmentBalance.toFixed(2)}</span>
-                                                                                )}
-                                                                            </div>
-                                                                            <span className={cn(
-                                                                                "font-black text-lg",
-                                                                                (totals.main.billed - totals.main.paid) > 0 ? "text-red-500" : "text-emerald-600"
-                                                                            )}>
-                                                                                GH¢{Math.abs(totals.main.billed - totals.main.paid).toFixed(2)}
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Daily Fees Card */}
-                                                                <div className="relative overflow-hidden rounded-2xl bg-slate-50/50 border border-slate-100 p-6 transition-all hover:bg-white hover:shadow-md group/card">
-                                                                    <div className="flex items-center justify-between mb-4">
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className="p-2 bg-amber-50 rounded-lg text-amber-600 border border-amber-100">
-                                                                                <UtensilsCrossed className="w-5 h-5" />
-                                                                            </div>
-                                                                            <span className="font-bold text-slate-700 tracking-tight">Daily Fees Accrued</span>
-                                                                        </div>
-                                                                        <Badge variant="outline" className="border-amber-200 text-amber-600 bg-amber-50/50">
-                                                                            Attendance Based
-                                                                        </Badge>
-                                                                    </div>
-                                                                    <div className="space-y-3">
-                                                                        <div className="flex justify-between items-center text-sm">
-                                                                            <span className="text-slate-700 font-semibold">Total Accrued</span>
-                                                                            <span className="text-slate-900 font-black">GH¢{totals.daily.billed.toFixed(2)}</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center text-sm pb-3 border-b border-slate-100">
-                                                                            <span className="text-slate-700 font-semibold">Total Paid</span>
-                                                                            <span className="text-emerald-600 font-black">GH¢{totals.daily.paid.toFixed(2)}</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center pt-1">
-                                                                            <span className="text-xs font-black text-slate-700 uppercase tracking-wider">Net Daily Balance</span>
-                                                                            <span className={cn(
-                                                                                "font-black text-lg",
-                                                                                (totals.daily.billed - totals.daily.paid) > 0 ? "text-red-500" : "text-emerald-600"
-                                                                            )}>
-                                                                                GH¢{Math.abs(totals.daily.billed - totals.daily.paid).toFixed(2)}
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Children List Table */}
-                                                            <div className="rounded-2xl border border-slate-100 bg-white overflow-hidden shadow-sm">
-                                                                <Table>
-                                                                    <TableHeader className="bg-slate-200">
-                                                                        <TableRow className="hover:bg-transparent border-slate-300">
-                                                                            <TableHead className="text-slate-800 font-black uppercase tracking-widest text-[10px] h-10 px-6">Child Name & Class</TableHead>
-                                                                            <TableHead className="text-slate-800 font-black uppercase tracking-widest text-[10px] h-10 text-right">Balance</TableHead>
-                                                                            <TableHead className="text-slate-800 font-black uppercase tracking-widest text-[10px] h-10 text-right pr-6">Action</TableHead>
-                                                                        </TableRow>
-                                                                    </TableHeader>
-                                                                    <TableBody>
-                                                                        {children.map((student) => (
-                                                                            <TableRow key={student.studentId} className="border-b border-slate-300 last:border-0 hover:bg-slate-50/50 transition-colors">
-                                                                                <TableCell className="py-4 px-6">
-                                                                                    <div className="flex flex-col">
-                                                                                        <span className="font-bold text-slate-800">{student.name}</span>
-                                                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{student.className}</span>
-                                                                                    </div>
-                                                                                </TableCell>
-                                                                                <TableCell className="text-right py-4">
-                                                                                    <div className="flex flex-col items-end">
-                                                                                        <span className="text-sm font-black text-slate-900">GH¢{(student.ledgerBalance || 0).toFixed(2)}</span>
-                                                                                        <span className="text-[10px] text-slate-400 font-medium italic">Current Balance</span>
-                                                                                    </div>
-                                                                                </TableCell>
-                                                                                <TableCell className="text-right py-4 pr-6">
-                                                                                    <Button 
-                                                                                        variant="ghost" 
-                                                                                        size="sm" 
-                                                                                        className="h-8 px-3 text-primary hover:text-primary hover:bg-primary/5 font-bold rounded-lg"
-                                                                                        onClick={() => { 
-                                                                                            setActiveTab('students'); 
-                                                                                            setSelectedStudentForView(student); 
-                                                                                            setIsViewDialogOpen(true); 
-                                                                                        }}
-                                                                                    >
-                                                                                        Detail View
-                                                                                    </Button>
-                                                                                </TableCell>
-                                                                            </TableRow>
-                                                                        ))}
-                                                                    </TableBody>
-                                                                </Table>
-                                                            </div>
-
-                                                            {/* Consolidated Family Activity - Collapsible */}
-                                                            {familyData.ledger.length > 0 && (
-                                                                <div className="mt-8 pt-8 border-t border-slate-100">
-                                                                    <button 
-                                                                        onClick={() => setExpandedFamilies(prev => ({ ...prev, [parentId]: !prev[parentId] }))}
-                                                                        className="flex items-center justify-between w-full group/toggle hover:bg-slate-100 p-3 rounded-xl transition-all border border-slate-100"
-                                                                    >
-                                                                        <div className="flex items-center gap-2">
-                                                                            <Receipt className="w-5 h-5 text-slate-500 group-hover/toggle:text-primary transition-colors" />
-                                                                            <h4 className="text-sm font-black text-slate-700 uppercase tracking-widest group-hover/toggle:text-primary transition-colors">
-                                                                                {expandedFamilies[parentId] ? 'Hide Recent Activity' : 'Show Recent Activity'}
-                                                                            </h4>
-                                                                        </div>
-                                                                        <ChevronDown className={cn(
-                                                                            "w-6 h-6 text-slate-800 transition-transform duration-300",
-                                                                            expandedFamilies[parentId] && "rotate-180 text-primary"
-                                                                        )} />
-                                                                    </button>
-
-                                                                    {expandedFamilies[parentId] && (
-                                                                        <div className="space-y-4 mt-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                                            {familyData.ledger.map((t, idx) => (
-                                                                                <div key={`${t.id}-${idx}`} className="flex items-center justify-between py-4 border-b border-slate-300 last:border-0">
-                                                                                    <div className="flex items-center gap-4">
-                                                                                        <div className="text-[11px] font-black text-slate-700 w-16">
-                                                                                            {new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                                                                                        </div>
-                                                                                        <div className="flex flex-col">
-                                                                                            <span className="text-sm font-black text-slate-900 tracking-tight">
-                                                                                                {t.description}
-                                                                                            </span>
-                                                                                            <span className="text-[10px] font-black text-slate-600 uppercase">
-                                                                                                {t.studentName} • {t.type === 'payment' ? 'Payment' : 'Charge'}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                    <div className={cn(
-                                                                                        "text-base font-black tabular-nums",
-                                                                                        t.credit > 0 ? "text-emerald-600" : "text-red-500"
-                                                                                    )}>
-                                                                                        {t.credit > 0 ? '+' : '-' }GH¢{(t.credit || t.debit).toFixed(2)}
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </CardContent>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        
                         {activeTab === 'fees' && (
                             <div className="space-y-6">
                                 {/* Shared Filter Bar */}
-                                <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-card border border-primary/10 p-4 rounded-2xl shadow-sm transition-all">
+                                <div className="sticky top-0 z-10 flex flex-col lg:flex-row items-center justify-between gap-4 bg-card border border-primary/10 p-4 rounded-2xl shadow-sm transition-all">
                                     <div className="flex items-center gap-4 w-full lg:w-auto">
                                         <div className="p-2.5 bg-primary/10 rounded-xl">
                                             <Receipt className="w-5 h-5 text-primary" />
@@ -2793,13 +2673,22 @@ function AdminDashboard() {
                                             <h2 className="text-xl font-bold text-primary leading-tight">
                                                 {feesActiveSubTab === 'daily' 
                                                     ? (selectedStudent ? 'Daily Collection History' : 'Daily Collections') 
-                                                    : 'Main School Fees'}
+                                                    : 'Core School Fees'}
                                             </h2>
                                             <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Fees Management</p>
                                         </div>
                                     </div>
 
                                     <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+                                        {feesActiveSubTab === 'main' && (
+                                            <Button 
+                                                variant="outline" 
+                                                onClick={() => setIsBulkReminderModalOpen(true)}
+                                                className="h-10 px-4 rounded-xl font-bold gap-2 border-primary/20 text-primary text-xs"
+                                            >
+                                                <Bell className="w-4 h-4" /> <span>Send Reminders</span>
+                                            </Button>
+                                        )}
                                         {feesActiveSubTab === 'daily' && (
                                             <Button
                                                 onClick={() => setIsParentBulkModalOpen(true)}
@@ -2834,7 +2723,7 @@ function AdminDashboard() {
                                             </SelectContent>
                                         </Select>
 
-                                         {selectedClassForFees !== 'all' && (
+                                         {selectedClassForFees !== 'all' && feesActiveSubTab === 'main' && (
                                             <>
                                                 <Button 
                                                     onClick={handleOpenBulkFee}
@@ -2843,17 +2732,33 @@ function AdminDashboard() {
                                                     <FilePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
                                                     Bulk Fee
                                                 </Button>
+                                                
+                                                <Button 
+                                                    onClick={() => setIsGenerateTermBillsModalOpen(true)}
+                                                    className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-lg shadow-indigo-600/20 flex items-center gap-2 group transition-all"
+                                                >
+                                                    <Printer className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                    Print Term Bills
+                                                </Button>
 
-                                                {feesActiveSubTab === 'main' && (
-                                                    <Button
-                                                        onClick={() => setFeesActiveSubTab('daily')}
-                                                        className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center gap-2 group transition-all"
-                                                    >
-                                                        <CalendarIcon className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                                        Daily Collections
-                                                    </Button>
-                                                )}
+                                                <Button
+                                                    onClick={() => setFeesActiveSubTab('daily')}
+                                                    className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center gap-2 group transition-all"
+                                                >
+                                                    <CalendarIcon className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                    Daily Collections
+                                                </Button>
                                             </>
+                                        )}
+
+                                        {selectedClassForFees !== 'all' && feesActiveSubTab === 'daily' && (
+                                            <Button 
+                                                onClick={() => setBulkDailyRatesModalOpen(true)}
+                                                className="h-10 px-4 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-lg shadow-primary/20 flex items-center gap-2 group transition-all"
+                                            >
+                                                <Users className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                                Bulk Set Rates
+                                            </Button>
                                         )}
 
                                         <Popover open={isComboboxOpen} onOpenChange={setIsComboboxOpen}>
@@ -2872,7 +2777,7 @@ function AdminDashboard() {
                                                 </Button>
                                             </PopoverTrigger>
                                             <PopoverContent className="w-[calc(100vw-2rem)] md:w-[320px] p-0 border-none shadow-2xl rounded-2xl overflow-hidden" align="end">
-                                                <Command className="bg-white">
+                                                <Command className="bg-white" value={comboboxValue} onValueChange={setComboboxValue}>
                                                     <CommandInput placeholder="Search student..." className="h-12" />
                                                     <CommandList className="max-h-[300px]">
                                                         <CommandEmpty>No student found.</CommandEmpty>
@@ -2880,6 +2785,7 @@ function AdminDashboard() {
                                                             {filteredStudentsForFees.map((s) => (
                                                                 <CommandItem
                                                                     key={s.studentId}
+                                                                    id={`student-item-${s.studentId}`}
                                                                     value={`${s.name} ${s.studentId}`}
                                                                     onSelect={() => {
                                                                         setSelectedStudentId(s.studentId);
@@ -2906,15 +2812,26 @@ function AdminDashboard() {
                                                     onClick={() => handleOpenTransactionModal('payment')}
                                                     className="h-10 px-4 rounded-xl font-bold gap-2 shadow-lg shadow-emerald-500/20 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
                                                 >
-                                                    <Banknote className="w-4 h-4" /> <span>Payment</span>
+                                                    <Banknote className="w-4 h-4" /> <span>Record Payment</span>
                                                 </Button>
-                                                <Button 
-                                                    onClick={() => handleOpenTransactionModal('fee')}
-                                                    variant="outline"
-                                                    className="h-10 px-4 rounded-xl font-bold gap-2 border-primary/20 hover:bg-primary/5 text-primary text-xs"
-                                                >
-                                                    <FilePlus className="w-4 h-4" /> <span>Fee</span>
-                                                </Button>
+                                                {feesActiveSubTab === 'main' && (
+                                                    <Button 
+                                                        onClick={() => handleOpenTransactionModal('fee')}
+                                                        variant="outline"
+                                                        className="h-10 px-4 rounded-xl font-bold gap-2 border-primary/20 hover:bg-primary/5 text-primary text-xs"
+                                                    >
+                                                        <FilePlus className="w-4 h-4" /> <span>Charge Fee</span>
+                                                    </Button>
+                                                )}
+                                                {feesActiveSubTab === 'main' && (!selectedStudent.ledger || selectedStudent.ledger.filter(t => !t.isVoided).length === 0) && (
+                                                    <Button 
+                                                        onClick={() => setIsAdmissionBillModalOpen(true)}
+                                                        variant="outline"
+                                                        className="h-10 px-4 rounded-xl font-bold gap-2 border-amber-500/30 hover:bg-amber-50 text-amber-700 text-xs"
+                                                    >
+                                                        <FileText className="w-4 h-4" /> <span>Load Admission Bill</span>
+                                                    </Button>
+                                                )}
                                             </div>
                                         )}
                                 </div>
@@ -3068,8 +2985,8 @@ function AdminDashboard() {
                                                 const isDailySubTab = (feesActiveSubTab as string) === 'daily';
                                                 
                                                 const filteredLedger = (selectedStudent.ledger || []).filter(t => {
-                                                    const isTransactionDaily = isDailyTransaction(t, allFeeCategories);
-                                                    return isDailySubTab ? isTransactionDaily : !isTransactionDaily;
+                                                    const isDaily = isDailyTransaction(t, allFeeCategories);
+                                                    return isDailySubTab ? isDaily : !isDaily;
                                                 });
                                                 
                                                 const sortedPeriods = [...academicPeriods].reverse();
@@ -3088,7 +3005,7 @@ function AdminDashboard() {
                                                     {
                                                         id: 'BF',
                                                         date: 'Opening',
-                                                        description: `Balance Brought Forward (${isDailySubTab ? 'Daily Fees' : 'Main Fees'})`,
+                                                        description: `Balance Brought Forward (${isDailySubTab ? 'Daily Recurring Fees' : 'Core Fees'})`,
                                                         category: 'general',
                                                         debit: balanceBF > 0 ? balanceBF : 0,
                                                         credit: balanceBF < 0 ? Math.abs(balanceBF) : 0,
@@ -3271,7 +3188,7 @@ function AdminDashboard() {
                                                             ...(balanceBF !== 0 ? [{
                                                                 id: 'BF',
                                                                 date: 'Opening',
-                                                                description: 'Balance Brought Forward (Daily Fees)',
+                                                                description: 'Balance Brought Forward (Daily Recurring Fees)',
                                                                 category: 'general',
                                                                 debit: balanceBF > 0 ? balanceBF : 0,
                                                                 credit: balanceBF < 0 ? Math.abs(balanceBF) : 0,
@@ -3603,7 +3520,7 @@ function AdminDashboard() {
                                                                     <TableCell colSpan={5} className="h-64 text-center">
                                                                         <div className="flex flex-col items-center justify-center opacity-40">
                                                                             <Users className="w-12 h-12 mb-4" />
-                                                                            <p className="font-bold">No daily fee records found for this period.</p>
+                                                                            <p className="font-bold">No daily recurring fee records found for this period.</p>
                                                                             <p className="text-xs">Ensure attendance has been marked and daily rates are set for students.</p>
                                                                         </div>
                                                                     </TableCell>
@@ -3620,8 +3537,7 @@ function AdminDashboard() {
                             </div>
                         )}
 
-                        
-                        {activeTab === 'attendance' && (
+                        {userRole === 'admin' && activeTab === 'attendance' && (
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="text-heading-md">Daily Attendance</CardTitle>
@@ -3718,15 +3634,29 @@ function AdminDashboard() {
                                 </CardHeader>
                                  <CardContent>
                                     <Tabs defaultValue="summary" className="w-full">
-                                        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 h-auto gap-2">
-                                            <TabsTrigger value="summary" className="text-xs sm:text-sm py-2">Overview</TabsTrigger>
-                                            <TabsTrigger value="income" className="text-xs sm:text-sm py-2">Income Analysis</TabsTrigger>
-                                            <TabsTrigger value="expenditures" className="text-xs sm:text-sm py-2">Expenditures</TabsTrigger>
-                                            <TabsTrigger value="daily_report" className="text-xs sm:text-sm py-2">Daily Fees Report</TabsTrigger>
+                                        <TabsList className="grid w-full grid-cols-2 md:grid-cols-9 h-auto gap-2 bg-slate-100/50 p-1.5 rounded-xl border border-slate-200/60">
+                                            <TabsTrigger value="summary" className="data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><PieChart className="w-4 h-4"/> Overview</TabsTrigger>
+                                            <TabsTrigger value="income" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><TrendingUp className="w-4 h-4"/> Income</TabsTrigger>
+                                            <TabsTrigger value="expenditures" className="data-[state=active]:bg-rose-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><CreditCard className="w-4 h-4"/> Expenditures</TabsTrigger>
+                                            <TabsTrigger value="budgeting" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><Wallet className="w-4 h-4"/> Budgeting</TabsTrigger>
+                                            <TabsTrigger value="debts" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><CreditCard className="w-4 h-4"/> Debts</TabsTrigger>
+                                            <TabsTrigger value="daily_report" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><CalendarIcon className="w-4 h-4"/> Daily Recurring Fees</TabsTrigger>
+                                            <TabsTrigger value="daily_revenue" className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><CalendarIcon className="w-4 h-4"/> Daily Rev</TabsTrigger>
+                                            <TabsTrigger value="monthly_report" className="data-[state=active]:bg-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 flex gap-2 items-center text-slate-600 hover:text-slate-900"><CalendarDays className="w-4 h-4"/> Monthly</TabsTrigger>
+                                            <TabsTrigger value="ai_insights" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-2.5 text-xs sm:text-sm font-bold transition-all duration-200 flex gap-2 items-center text-indigo-600 hover:text-indigo-800"><Sparkles className="w-4 h-4"/> AI Insights</TabsTrigger>
                                         </TabsList>
+                                        <TabsContent value="budgeting" className="mt-6">
+                                            <BudgetingTab schoolId={schoolId || ''} periodId={selectedPeriodId || ''} expenditures={expenditures} />
+                                        </TabsContent>
                                         <TabsContent value="summary" className="mt-6">
                                             <Card className="bg-muted/30">
-                                                <CardHeader><CardTitle className="text-heading-md">Overall Financial Summary</CardTitle></CardHeader>
+                                                <CardHeader><CardTitle className="text-heading-md flex items-center justify-between w-full">
+                                                        <span>Overall Financial Summary</span>
+                                                        <div className="flex gap-2">
+                                                            <Button size="sm" onClick={handleExportFinancialSummary} className="h-9 gap-2 bg-emerald-600 text-white hover:bg-emerald-700 font-medium border-0 shadow-sm"><Download className="w-4 h-4"/> Export CSV</Button>
+                                                            <Button size="sm" onClick={() => setIsReportConfigModalOpen(true)} className="h-9 gap-2 bg-indigo-600 text-white hover:bg-indigo-700 font-medium border-0 shadow-sm"><Printer className="w-4 h-4"/> Print Monthly Report</Button>
+                                                        </div>
+                                                    </CardTitle></CardHeader>
                                                 <CardContent>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
                                                         <div><p className="text-sm text-muted-foreground font-sans font-medium">Total Income</p><p className="text-2xl font-bold text-success text-numeric">GH¢{(overallTotals.totalIncome || 0).toFixed(2)}</p></div>
@@ -3736,46 +3666,7 @@ function AdminDashboard() {
                                                     </div>
                                                 </CardContent>
                                             </Card>
-                                            <Card className="mt-6">
-                                                <CardHeader><CardTitle className="text-heading-md">Manage Debts & Liabilities</CardTitle></CardHeader>
-                                                <CardContent className="grid md:grid-cols-2 gap-8">
-                                                     <Card>
-                                                        <CardHeader><CardTitle className="text-heading-md flex items-center gap-2"><HandCoins className="w-5 h-5"/> Record a Debt</CardTitle></CardHeader>
-                                                        <form onSubmit={handleAddDebt}>
-                                                            <CardContent className="space-y-4">
-                                                                <div className="space-y-2"><Label htmlFor="debt-creditor">Creditor</Label><Input id="debt-creditor" placeholder="e.g. ABC Bank" value={debtForm.creditor} onChange={e => setDebtForm({...debtForm, creditor: e.target.value})} required disabled={isSubmitting}/></div>
-                                                                <div className="space-y-2"><Label htmlFor="debt-desc">Description</Label><Input id="debt-desc" placeholder="e.g. Loan for school bus" value={debtForm.description} onChange={e => setDebtForm({...debtForm, description: e.target.value})} required disabled={isSubmitting}/></div>
-                                                                <div className="grid grid-cols-2 gap-4">
-                                                                    <div className="space-y-2"><Label htmlFor="debt-amount">Amount (GH¢)</Label><Input id="debt-amount" type="number" placeholder="0.00" value={debtForm.amount} onChange={e => setDebtForm({...debtForm, amount: e.target.value})} required disabled={isSubmitting}/></div>
-                                                                    <div className="space-y-2"><Label htmlFor="debt-date">Date Incurred</Label><Input id="debt-date" type="date" value={debtForm.date} onChange={e => setDebtForm({...debtForm, date: e.target.value})} required disabled={isSubmitting}/></div>
-                                                                </div>
-                                                            </CardContent>
-                                                            <DialogFooter className="px-6 pb-6"><Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? <><Loader2 className="animate-spin" /> Saving...</> : 'Save Debt Record'}</Button></DialogFooter>
-                                                        </form>
-                                                    </Card>
-                                                     <Card>
-                                                        <CardHeader><CardTitle className="text-heading-md">Debt History</CardTitle></CardHeader>
-                                                        <CardContent>
-                                                            {isLoading ? <Skeleton className="h-40 w-full" /> : 
-                                                            debts.length === 0 ? <p className="text-center text-muted-foreground py-8">No debts recorded.</p> : (
-                                                                <div className="overflow-x-auto">
-                                                                <Table><TableHeader><TableRow><TableHead>Details</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
-                                                                    <TableBody>
-                                                                        {debts.map(debt => (
-                                                                            <TableRow key={debt.id}>
-                                                                                <TableCell><div className="font-medium">{debt.creditor}</div><div className="text-xs text-muted-foreground">{debt.description} &bull; {new Date(debt.date).toLocaleDateString('en-GB')}</div></TableCell>
-                                                                                <TableCell className="text-right text-numeric">GH¢{debt.amount.toFixed(2)}</TableCell>
-                                                                                <TableCell className="text-right"><Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDeleteDebt(debt)} disabled={isSubmitting}><Trash2 className="h-4 w-4" /></Button></TableCell>
-                                                                            </TableRow>
-                                                                        ))}
-                                                                    </TableBody>
-                                                                </Table>
-                                                                </div>
-                                                            )}
-                                                        </CardContent>
-                                                    </Card>
-                                                </CardContent>
-                                            </Card>
+                                            
                                         </TabsContent>
 
                                         <TabsContent value="income" className="mt-6">
@@ -3785,7 +3676,7 @@ function AdminDashboard() {
                                                     <CardDescription>Breakdown of billed, accrued, and paid amounts for all fee types.</CardDescription>
                                                 </CardHeader>
                                                 <CardContent>
-                                                    <Table>
+                                                    <Table wrapperClassName="max-h-[500px]">
                                                         <TableHeader>
                                                             <TableRow>
                                                                 <TableHead>Category</TableHead>
@@ -3818,42 +3709,14 @@ function AdminDashboard() {
                                         <TabsContent value="expenditures" className="mt-6">
                                             <div className="space-y-6">
                                                 <ExpenditureSection 
-                                                    title="General Expenditures"
-                                                    description="Track spending related to general school operations like salaries, utilities, and supplies."
-                                                    expenditureType="General"
-                                                    income={incomeTotals.General || 0}
-                                                    totalExpenditure={expenditureTotals.General || 0}
-                                                    expenditures={expenditures.filter(e => e.type === 'General')}
-                                                    categories={generalExpenditureCategories}
+                                                    title="All Expenditures"
+                                                    description="Track all school expenditures in one place. Enter a description and AI will suggest a category."
+                                                    income={overallTotals.totalIncome || 0}
+                                                    totalExpenditure={overallTotals.totalExpenditure || 0}
+                                                    expenditures={expenditures}
+                                                    categories={allExpenditureCategories}
                                                     onAddExpenditure={handleAddExpenditure}
                                                     onDeleteExpenditure={handleDeleteExpenditure}
-                                                    formState={{ expenditureForm, setExpenditureForm }}
-                                                    isSubmitting={isSubmitting}
-                                                />
-                                                <ExpenditureSection 
-                                                    title="Feeding Program Expenditures"
-                                                    description="Track all spending related to the school's feeding program."
-                                                    expenditureType="Feeding"
-                                                    income={incomeTotals.Feeding || 0}
-                                                    totalExpenditure={expenditureTotals.Feeding || 0}
-                                                    expenditures={expenditures.filter(e => e.type === 'Feeding')}
-                                                    categories={feedingExpenditureCategories}
-                                                    onAddExpenditure={handleAddExpenditure}
-                                                    onDeleteExpenditure={handleDeleteExpenditure}
-                                                    formState={{ expenditureForm, setExpenditureForm }}
-                                                    isSubmitting={isSubmitting}
-                                                />
-                                                <ExpenditureSection 
-                                                    title="Transportation Expenditures"
-                                                    description="Track all spending related to school transportation, like fuel and maintenance."
-                                                    expenditureType="Transportation"
-                                                    income={incomeTotals.Transportation || 0}
-                                                    totalExpenditure={expenditureTotals.Transportation || 0}
-                                                    expenditures={expenditures.filter(e => e.type === 'Transportation')}
-                                                    categories={transportationExpenditureCategories}
-                                                    onAddExpenditure={handleAddExpenditure}
-                                                    onDeleteExpenditure={handleDeleteExpenditure}
-                                                    formState={{ expenditureForm, setExpenditureForm }}
                                                     isSubmitting={isSubmitting}
                                                 />
                                             </div>
@@ -3864,8 +3727,8 @@ function AdminDashboard() {
                                                 <CardHeader>
                                                     <div className="flex items-center justify-between">
                                                         <div>
-                                                            <CardTitle className="text-heading-md">Daily Fees Accrual Report</CardTitle>
-                                                            <CardDescription>Detailed report of daily fees (Feeding, etc.) accrued based on attendance.</CardDescription>
+                                                            <CardTitle className="text-heading-md">Daily Recurring Fees Accrual Report</CardTitle>
+                                                            <CardDescription>Detailed report of daily recurring fees (Feeding, etc.) accrued based on attendance.</CardDescription>
                                                         </div>
                                                         <div className="flex items-center gap-2">
                                                             <Label className="text-xs">Filter Class:</Label>
@@ -3903,7 +3766,7 @@ function AdminDashboard() {
                                                             <TableBody>
                                                                 {dailyFeeSummary.length === 0 ? (
                                                                     <TableRow>
-                                                                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No daily fee records for the selected period/class.</TableCell>
+                                                                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No daily recurring fee records for the selected period/class.</TableCell>
                                                                     </TableRow>
                                                                 ) : (
                                                                     dailyFeeSummary.map((item, idx) => (
@@ -3942,12 +3805,157 @@ function AdminDashboard() {
                                                 </CardContent>
                                             </Card>
                                         </TabsContent>
+
+                                        <TabsContent value="daily_revenue" className="mt-6">
+                                            <Card>
+                                                <CardHeader>
+                                                    <CardTitle className="text-heading-md">Daily Revenue Summary</CardTitle>
+                                                    <CardDescription>Day-by-day breakdown of all incoming revenue.</CardDescription>
+                                                </CardHeader>
+                                                <CardContent>
+                                                    <div className="overflow-x-auto">
+                                                        <Table>
+                                                            <TableHeader>
+                                                                <TableRow>
+                                                                    <TableHead>Date</TableHead>
+                                                                    <TableHead className="text-right">Core Fees Collected</TableHead>
+                                                                    <TableHead className="text-right">Daily Recurring Fees Collected</TableHead>
+                                                                    <TableHead className="text-right">Total Revenue</TableHead>
+                                                                </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                                {dailyRevenueSummary.length === 0 ? (
+                                                                    <TableRow>
+                                                                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No payments recorded.</TableCell>
+                                                                    </TableRow>
+                                                                ) : (
+                                                                    dailyRevenueSummary.map((day, idx) => (
+                                                                        <TableRow key={idx}>
+                                                                            <TableCell className="font-medium whitespace-nowrap">
+                                                                                {(() => {
+                                                                                    const [year, month, dayPart] = day.date.split('-');
+                                                                                    return `${dayPart}-${month}-${year}`;
+                                                                                })()}
+                                                                            </TableCell>
+                                                                            <TableCell className="text-right font-medium text-emerald-600">GH¢{day.mainFeesAmount.toFixed(2)}</TableCell>
+                                                                            <TableCell className="text-right font-medium text-blue-600">GH¢{day.dailyFeesAmount.toFixed(2)}</TableCell>
+                                                                            <TableCell className="text-right font-bold text-slate-800">GH¢{day.totalAmount.toFixed(2)}</TableCell>
+                                                                        </TableRow>
+                                                                    ))
+                                                                )}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        </TabsContent>
+                                        <TabsContent value="monthly_report" className="mt-6">
+                                            <Card>
+                                                <CardHeader>
+                                                    <CardTitle className="text-heading-md">Monthly Financial History</CardTitle>
+                                                    <CardDescription>Review income versus expenditure month-by-month for the current year.</CardDescription>
+                                                </CardHeader>
+                                                <CardContent>
+                                                    <div className="overflow-x-auto">
+                                                        <Table>
+                                                            <TableHeader>
+                                                                <TableRow>
+                                                                    <TableHead>Month</TableHead>
+                                                                    <TableHead className="text-right">Total Income</TableHead>
+                                                                    <TableHead className="text-right">Total Expenditure</TableHead>
+                                                                    <TableHead className="text-right">Net Profit/Loss</TableHead>
+                                                                </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                                {monthlyFinancialData.length === 0 ? (
+                                                                    <TableRow>
+                                                                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No financial data available for this year.</TableCell>
+                                                                    </TableRow>
+                                                                ) : (
+                                                                    monthlyFinancialData.map((item, idx) => {
+                                                                        const net = item.Income - item.Expenditure;
+                                                                        return (
+                                                                            <TableRow key={idx}>
+                                                                                <TableCell className="font-medium">{item.name}</TableCell>
+                                                                                <TableCell className="text-right text-emerald-600 font-medium">GH¢{item.Income.toFixed(2)}</TableCell>
+                                                                                <TableCell className="text-right text-rose-600 font-medium">GH¢{item.Expenditure.toFixed(2)}</TableCell>
+                                                                                <TableCell className={`text-right font-bold ${net >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                                                                                    {net >= 0 ? `+GH¢${net.toFixed(2)}` : `-GH¢${Math.abs(net).toFixed(2)}`}
+                                                                                </TableCell>
+                                                                            </TableRow>
+                                                                        );
+                                                                    })
+                                                                )}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        </TabsContent>
+
+                                        
+                                        <TabsContent value="debts" className="mt-6">
+                                            <Card className="mt-6">
+                                                <CardHeader><CardTitle className="text-heading-md">Manage Debts & Liabilities</CardTitle></CardHeader>
+                                                <CardContent className="grid md:grid-cols-2 gap-8">
+                                                     <Card>
+                                                        <CardHeader><CardTitle className="text-heading-md flex items-center gap-2"><HandCoins className="w-5 h-5"/> Record a Debt</CardTitle></CardHeader>
+                                                        <form onSubmit={handleAddDebt}>
+                                                            <CardContent className="space-y-4">
+                                                                <div className="space-y-2"><Label htmlFor="debt-creditor">Creditor</Label><Input id="debt-creditor" placeholder="e.g. ABC Bank" value={debtForm.creditor} onChange={e => setDebtForm({...debtForm, creditor: e.target.value})} required disabled={isSubmitting}/></div>
+                                                                <div className="space-y-2"><Label htmlFor="debt-desc">Description</Label><Input id="debt-desc" placeholder="e.g. Loan for school bus" value={debtForm.description} onChange={e => setDebtForm({...debtForm, description: e.target.value})} required disabled={isSubmitting}/></div>
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    <div className="space-y-2"><Label htmlFor="debt-amount">Amount (GH¢)</Label><Input id="debt-amount" type="number" placeholder="0.00" value={debtForm.amount} onChange={e => setDebtForm({...debtForm, amount: e.target.value})} required disabled={isSubmitting}/></div>
+                                                                    <div className="space-y-2"><Label htmlFor="debt-date">Date Incurred</Label><DatePicker id="debt-date" value={debtForm.date} onChange={val => setDebtForm({...debtForm, date: val})} disabled={isSubmitting}/></div>
+                                                                </div>
+                                                            </CardContent>
+                                                            <DialogFooter className="px-6 pb-6"><Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? <><Loader2 className="animate-spin" /> Saving...</> : 'Save Debt Record'}</Button></DialogFooter>
+                                                        </form>
+                                                    </Card>
+                                                     <Card>
+                                                        <CardHeader><CardTitle className="text-heading-md">Debt History</CardTitle></CardHeader>
+                                                        <CardContent>
+                                                            {isLoading ? <Skeleton className="h-40 w-full" /> : 
+                                                            debts.length === 0 ? <p className="text-center text-muted-foreground py-8">No debts recorded.</p> : (
+                                                                <div className="overflow-x-auto">
+                                                                <Table><TableHeader><TableRow><TableHead>Details</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                                                                    <TableBody>
+                                                                        {debts.map(debt => (
+                                                                            <TableRow key={debt.id}>
+                                                                                <TableCell><div className="font-medium">{debt.creditor}</div><div className="text-xs text-muted-foreground">{debt.description} &bull; {new Date(debt.date).toLocaleDateString('en-GB')}</div></TableCell>
+                                                                                <TableCell className="text-right text-numeric">GH¢{debt.amount.toFixed(2)}</TableCell>
+                                                                                <TableCell className="text-right"><Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDeleteDebt(debt)} disabled={isSubmitting}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
+                                                                </div>
+                                                            )}
+                                                        </CardContent>
+                                                    </Card>
+                                                </CardContent>
+                                            </Card>
+                                        </TabsContent>
+<TabsContent value="ai_insights" className="mt-6">
+                                            <FinanceAiInsightsTab 
+                                                totalIncome={overallTotals.totalIncome || 0}
+                                                totalOutstanding={overallTotals.totalDebt || 0}
+                                                expendituresThisMonth={overallTotals.totalExpenditure || 0}
+                                                dailyFeesIncome={dailyFeeSummary.reduce((acc, row) => acc + row.totalPaid, 0)}
+                                                dailyFeesOutstanding={dailyFeeSummary.reduce((acc, row) => acc + row.balance, 0)}
+                                                recentExpenditures={expenditures.slice(0, 5).map(e => ({ category: e.category, amount: Number(e.amount) || 0 }))}
+                                                totalStudentsWithDebt={students.filter(s => {
+                                                    const balanceInfo = calculateStudentTotalBalance(s, academicPeriods, selectedPeriodId || undefined, feeCategories);
+                                                    return balanceInfo.totalOutstanding > 0;
+                                                }).length}
+                                            />
+                                        </TabsContent>
                                     </Tabs>
                                  </CardContent>
                             </Card>
                         )}
 
-                        {activeTab === 'staff' && (
+                        {userRole === 'admin' && activeTab === 'staff' && (
                             <div className="space-y-6">
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <Card className="border-4 border-primary">
@@ -3979,99 +3987,118 @@ function AdminDashboard() {
                                     </Card>
                                 </div>
 
-                                <div className="grid lg:grid-cols-3 gap-6">
-                                    <Card className="border-2 shadow-lg h-fit">
-                                        <CardHeader>
-                                            <CardTitle className="text-heading-md flex items-center gap-2">
-                                                {editingStaffId ? <Edit className="w-5 h-5"/> : <UserPlus className="w-5 h-5"/>} 
-                                                {editingStaffId ? 'Edit Staff Details' : 'Register Staff'}
-                                            </CardTitle>
-                                            <CardDescription>{editingStaffId ? 'Update information for this employee.' : 'Enter details to add a new employee.'}</CardDescription>
-                                        </CardHeader>
-                                        <form onSubmit={handleAddStaff}>
-                                            <CardContent className="space-y-4">
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="add-staff-name" className="text-xs font-bold uppercase">Full Name</Label>
-                                                    <Input id="add-staff-name" placeholder="e.g. John Doe" className="border-2" value={addStaffForm.name} onChange={e => setAddStaffForm({ ...addStaffForm, name: e.target.value })} required disabled={isSubmitting}/>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <Dialog open={isAddStaffDialogOpen} onOpenChange={setIsAddStaffDialogOpen}>
+                                        <DialogContent className="max-w-md">
+                                            <DialogHeader>
+                                                <DialogTitle className="flex items-center gap-2">
+                                                    {editingStaffId ? <Edit className="w-5 h-5"/> : <UserPlus className="w-5 h-5"/>} 
+                                                    {editingStaffId ? 'Edit Staff Details' : 'Register Staff'}
+                                                </DialogTitle>
+                                                <DialogDescription>{editingStaffId ? 'Update information for this employee.' : 'Enter details to add a new employee.'}</DialogDescription>
+                                            </DialogHeader>
+                                            <form onSubmit={handleAddStaff}>
+                                                <div className="space-y-4 py-4">
                                                     <div className="space-y-2">
-                                                        <Label htmlFor="add-staff-role" className="text-xs font-bold uppercase">Role</Label>
-                                                        <Select value={addStaffForm.role} onValueChange={(val: StaffRole) => setAddStaffForm({...addStaffForm, role: val})} disabled={isSubmitting}>
-                                                            <SelectTrigger id="add-staff-role" className="border-2">
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {STAFF_ROLES.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}
-                                                            </SelectContent>
-                                                        </Select>
+                                                        <Label htmlFor="add-staff-name" className="text-xs font-bold uppercase">Full Name</Label>
+                                                        <Input id="add-staff-name" placeholder="e.g. John Doe" className="border-2" value={addStaffForm.name} onChange={e => setAddStaffForm({ ...addStaffForm, name: e.target.value })} required disabled={isSubmitting}/>
                                                     </div>
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="add-staff-id" className="text-xs font-bold uppercase">Staff ID</Label>
-                                                        <Input id="add-staff-id" placeholder="Optional" className="border-2" value={addStaffForm.id} onChange={e => setAddStaffForm({ ...addStaffForm, id: e.target.value.toUpperCase() })} disabled={isSubmitting}/>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="add-staff-role" className="text-xs font-bold uppercase">Role</Label>
+                                                            <Select value={addStaffForm.role} onValueChange={(val: StaffRole) => setAddStaffForm({...addStaffForm, role: val})} disabled={isSubmitting}>
+                                                                <SelectTrigger id="add-staff-role" className="border-2">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {STAFF_ROLES.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="add-staff-id" className="text-xs font-bold uppercase">Staff ID</Label>
+                                                            <Input id="add-staff-id" placeholder="Optional" className="border-2" value={addStaffForm.id} onChange={e => setAddStaffForm({ ...addStaffForm, id: e.target.value.toUpperCase() })} disabled={isSubmitting}/>
+                                                        </div>
                                                     </div>
-                                                </div>
 
-                                                {(addStaffForm.role === 'Teacher' || addStaffForm.role === 'Assistant Teacher') && (
-                                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                                                        <Label htmlFor="add-staff-class" className="text-xs font-bold uppercase">Assigned Class</Label>
-                                                        <Input
-                                                            id="add-staff-class"
-                                                            list="staff-class-list"
-                                                            placeholder="Select or type a class"
-                                                            className="border-2"
-                                                            value={addStaffForm.className || ''}
-                                                            onChange={e => setAddStaffForm({ ...addStaffForm, className: e.target.value })}
-                                                            disabled={isSubmitting}
-                                                        />
-                                                        <datalist id="staff-class-list">
-                                                            {uniqueClassNames.map(name => <option key={name} value={name} />)}
-                                                        </datalist>
-                                                        <p className="text-[10px] text-muted-foreground">You can type a new class name or select from existing ones.</p>
-                                                    </div>
-                                                )}
+                                                    {(addStaffForm.role === 'Teacher' || addStaffForm.role === 'Assistant Teacher') && (
+                                                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                                                            <Label htmlFor="add-staff-class" className="text-xs font-bold uppercase">Assigned Class</Label>
+                                                            <Input
+                                                                id="add-staff-class"
+                                                                list="staff-class-list"
+                                                                placeholder="Select or type a class"
+                                                                className="border-2"
+                                                                value={addStaffForm.className || ''}
+                                                                onChange={e => setAddStaffForm({ ...addStaffForm, className: e.target.value })}
+                                                                disabled={isSubmitting}
+                                                            />
+                                                            <datalist id="staff-class-list">
+                                                                {uniqueClassNames.map(name => <option key={name} value={name} />)}
+                                                            </datalist>
+                                                            <p className="text-[10px] text-muted-foreground">You can type a new class name or select from existing ones.</p>
+                                                        </div>
+                                                    )}
 
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="add-staff-phone" className="text-xs font-bold uppercase">Phone Number</Label>
-                                                    <Input id="add-staff-phone" type="tel" placeholder="024XXXXXXX" className="border-2" value={addStaffForm.phone} onChange={e => setAddStaffForm({ ...addStaffForm, phone: e.target.value })} disabled={isSubmitting}/>
+                                                    {addStaffForm.role !== 'Gatekeeper' && addStaffForm.role !== 'Security' && addStaffForm.role !== 'Cashier' && (
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="add-staff-phone" className="text-xs font-bold uppercase">Phone Number</Label>
+                                                            <Input id="add-staff-phone" type="tel" placeholder="024XXXXXXX" className="border-2" value={addStaffForm.phone} onChange={e => setAddStaffForm({ ...addStaffForm, phone: e.target.value })} disabled={isSubmitting}/>
+                                                        </div>
+                                                    )}
+                                                    {addStaffForm.role !== 'Gatekeeper' && addStaffForm.role !== 'Security' && addStaffForm.role !== 'Cashier' && (
+                                                        <>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="add-staff-email" className="text-xs font-bold uppercase">Email Address</Label>
+                                                                <Input id="add-staff-email" type="email" placeholder="staff@example.com" className="border-2" value={addStaffForm.email} onChange={e => setAddStaffForm({ ...addStaffForm, email: e.target.value })} required disabled={isSubmitting}/>
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="add-staff-password" className="text-xs font-bold uppercase">Password {editingStaffId ? '(Leave blank to keep current)' : ''}</Label>
+                                                                <Input id="add-staff-password" type="password" placeholder={editingStaffId ? "••••••••" : "Min 6 characters"} className="border-2" value={addStaffForm.password || ''} onChange={e => setAddStaffForm({ ...addStaffForm, password: e.target.value })} required={!editingStaffId} disabled={isSubmitting}/>
+                                                            </div>
+                                                        </>
+                                                    )}
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="add-staff-email" className="text-xs font-bold uppercase">Email Address</Label>
-                                                    <Input id="add-staff-email" type="email" placeholder="staff@example.com" className="border-2" value={addStaffForm.email} onChange={e => setAddStaffForm({ ...addStaffForm, email: e.target.value })} required disabled={isSubmitting}/>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="add-staff-password" className="text-xs font-bold uppercase">Password {editingStaffId ? '(Leave blank to keep current)' : ''}</Label>
-                                                    <Input id="add-staff-password" type="password" placeholder={editingStaffId ? "••••••••" : "Min 6 characters"} className="border-2" value={addStaffForm.password || ''} onChange={e => setAddStaffForm({ ...addStaffForm, password: e.target.value })} required={!editingStaffId} disabled={isSubmitting}/>
-                                                </div>
-                                            </CardContent>
-                                            <CardFooter className="flex gap-2">
-                                                <Button type="submit" disabled={isSubmitting} className="flex-1 bg-primary font-bold uppercase tracking-widest h-12">
-                                                    {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : (editingStaffId ? <><Save className="mr-2 h-4 w-4" /> Save Changes</> : <><UserPlus className="mr-2 h-4 w-4" /> Add to System</>)}
-                                                </Button>
-                                                {editingStaffId && (
-                                                    <Button type="button" variant="outline" className="h-12" onClick={() => {
-                                                        setEditingStaffId(null);
-                                                        setAddStaffForm({ name: '', role: 'Teacher', id: '', className: '', phone: '', email: '', password: '' });
-                                                    }}>Cancel</Button>
-                                                )}
-                                            </CardFooter>
-                                        </form>
-                                    </Card>
+                                                <DialogFooter className="flex gap-2">
+                                                    {editingStaffId && (
+                                                        <DialogClose asChild>
+                                                            <Button type="button" variant="outline" className="h-12" onClick={() => {
+                                                                setEditingStaffId(null);
+                                                                setAddStaffForm(defaultAddStaffForm);
+                                                            }}>Cancel</Button>
+                                                        </DialogClose>
+                                                    )}
+                                                    <Button type="submit" disabled={isSubmitting} className="flex-1 bg-primary font-bold uppercase tracking-widest h-12">
+                                                        {isSubmitting ? <Loader2 className="animate-spin" /> : (editingStaffId ? <><Save className="mr-2 h-4 w-4" /> Save</> : <><UserPlus className="mr-2 h-4 w-4" /> Add</>)}
+                                                    </Button>
+                                                </DialogFooter>
+                                            </form>
+                                        </DialogContent>
+                                    </Dialog>
 
-                                    <Card className="lg:col-span-2 border-2 shadow-lg">
-                                        <CardHeader className="flex flex-row items-center justify-between">
+                                    <Card className="border-2 shadow-lg">
+                                        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                             <div>
                                                 <CardTitle className="text-heading-md">Active Personnel</CardTitle>
                                                 <CardDescription>Manage your current staff members.</CardDescription>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <Search className="w-4 h-4 text-muted-foreground" />
-                                                <Input 
-                                                    placeholder="Search staff..." 
-                                                    className="w-48 h-8 text-sm" 
-                                                    value={staffSearchQuery}
-                                                    onChange={(e) => setStaffSearchQuery(e.target.value)}
-                                                />
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-2">
+                                                    <Search className="w-4 h-4 text-muted-foreground" />
+                                                    <Input 
+                                                        placeholder="Search staff..." 
+                                                        className="w-48 h-8 text-sm" 
+                                                        value={staffSearchQuery}
+                                                        onChange={(e) => setStaffSearchQuery(e.target.value)}
+                                                    />
+                                                </div>
+                                                <Button onClick={() => {
+                                                    setEditingStaffId(null);
+                                                    setAddStaffForm(defaultAddStaffForm);
+                                                    setIsAddStaffDialogOpen(true);
+                                                }} className="h-8 shadow-sm">
+                                                    <UserPlus className="w-4 h-4 mr-2" /> Register Staff
+                                                </Button>
                                             </div>
                                         </CardHeader>
                                         <CardContent>
@@ -4153,14 +4180,15 @@ function AdminDashboard() {
                                                                                         email: staff.email || '',
                                                                                         password: ''
                                                                                     });
+                                                                                    setIsAddStaffDialogOpen(true);
                                                                                 }}><Edit className="mr-2 h-4 w-4" /> Edit Details</DropdownMenuItem>
                                                                                 <DropdownMenuItem onClick={() => handleOpenSalaryDialog(staff)}><DollarSign className="mr-2 h-4 w-4" /> Set Salary</DropdownMenuItem>
                                                                                 <DropdownMenuSeparator />
                                                                                 <DropdownMenuItem className="text-destructive" onClick={() => handleArchiveStaff(staff)}><Archive className="mr-2 h-4 w-4" /> Archive</DropdownMenuItem>
                                                                             </DropdownMenuContent>
                                                                         </DropdownMenu>
-                                                                        </TableCell>
-                                                                    </TableRow>
+                                                                    </TableCell>
+                                                                </TableRow>
                                                                 );
                                                             })
                                                         )}
@@ -4173,7 +4201,7 @@ function AdminDashboard() {
                                 </div>
                         )}
 
-                        {activeTab === 'calendar' && (
+                        {userRole === 'admin' && activeTab === 'calendar' && (
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="text-heading-md flex items-center gap-2"><CalendarDays className="w-6 h-6"/> School Calendar</CardTitle>
@@ -4192,7 +4220,7 @@ function AdminDashboard() {
                                                     <div className="grid grid-cols-2 gap-4">
                                                         <div className="space-y-2">
                                                             <Label htmlFor="event-date">Date</Label>
-                                                            <Input id="event-date" type="date" value={calendarEventForm.date} onChange={e => setCalendarEventForm({...calendarEventForm, date: e.target.value})} required disabled={isSubmitting} />
+                                                            <DatePicker id="event-date" value={calendarEventForm.date} onChange={val => setCalendarEventForm({...calendarEventForm, date: val})} disabled={isSubmitting} />
                                                         </div>
                                                         <div className="space-y-2">
                                                             <Label htmlFor="event-type">Event Type</Label>
@@ -4255,7 +4283,7 @@ function AdminDashboard() {
                             </Card>
                         )}
 
-                        {activeTab === 'communication' && (
+                        {userRole === 'admin' && activeTab === 'communication' && (
                             <div className="space-y-6">
                                 <Card className="max-w-3xl mx-auto border-4 border-primary">
                                     <CardHeader>
@@ -4288,19 +4316,35 @@ function AdminDashboard() {
                                                 <Label htmlFor="message">Message</Label>
                                                 <Textarea id="message" placeholder="Type your announcement here..." className="border-2" rows={5} value={communicationForm.message} onChange={e => setCommunicationForm({...communicationForm, message: e.target.value})} required disabled={isSubmitting}/>
                                             </div>
-                                            <div className="flex items-center space-x-2 pt-2">
-                                                <Checkbox 
-                                                    id="sendAsSMS" 
-                                                    checked={communicationForm.sendAsSMS} 
-                                                    onCheckedChange={(checked) => setCommunicationForm({...communicationForm, sendAsSMS: !!checked})}
-                                                    disabled={isSubmitting}
-                                                />
-                                                <label
-                                                    htmlFor="sendAsSMS"
-                                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                                >
-                                                    Send as SMS
-                                                </label>
+                                            <div className="flex flex-col space-y-4 pt-4 border-t">
+                                                <div className="flex items-center space-x-2">
+                                                    <Checkbox 
+                                                        id="sendAsSMS" 
+                                                        checked={communicationForm.sendAsSMS} 
+                                                        onCheckedChange={(checked) => setCommunicationForm({...communicationForm, sendAsSMS: !!checked})}
+                                                        disabled={isSubmitting}
+                                                    />
+                                                    <label
+                                                        htmlFor="sendAsSMS"
+                                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                                    >
+                                                        Also send as SMS Message
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <Checkbox 
+                                                        id="sendAsVoice" 
+                                                        checked={communicationForm.sendAsVoice} 
+                                                        onCheckedChange={(checked) => setCommunicationForm({...communicationForm, sendAsVoice: !!checked})}
+                                                        disabled={isSubmitting}
+                                                    />
+                                                    <label
+                                                        htmlFor="sendAsVoice"
+                                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                                    >
+                                                        Also send as Voice SMS
+                                                    </label>
+                                                </div>
                                             </div>
                                         </CardContent>
                                         <DialogFooter className="px-6 pb-6">
@@ -4347,8 +4391,26 @@ function AdminDashboard() {
                             </div>
                         )}
 
-                        
-                        {activeTab === 'archive' && (
+                        {userRole === 'admin' && activeTab === 'promote-students' && (
+                            <PromoteStudentsTab 
+                                students={students} 
+                                db={db} 
+                                auth={auth} 
+                                storage={storage} 
+                                schoolId={schoolId!} 
+                            />
+                        )}
+
+                        {activeTab === 'debtors' && (
+                            <DebtorsListTab 
+                                students={[...students, ...archivedStudents]} 
+                                academicPeriods={academicPeriods} 
+                                feeCategories={feeCategories} 
+                                selectedPeriodId={selectedPeriodId}
+                            />
+                        )}
+
+                        {userRole === 'admin' && activeTab === 'archive' && (
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="text-heading-md flex items-center gap-2"><Archive className="w-6 h-6"/> Archive</CardTitle>
@@ -4425,11 +4487,23 @@ function AdminDashboard() {
                             </Card>
                         )}
 
-                        {activeTab === 'academic-reports' && (
+                        {userRole === 'admin' && activeTab === 'academic-reports' && (
                             <AcademicReportsTab schoolId={schoolId} />
                         )}
 
-                        {activeTab === 'settings' && (
+                        {userRole === 'admin' && activeTab === 'lesson-plans' && (
+                            <AdminLessonPlansTab schoolId={schoolId} />
+                        )}
+
+                        {userRole === 'admin' && activeTab === 'qr-generation' && (
+                            <QRGenerationTab schoolId={schoolId} schoolName={schoolDetails?.name || ''} />
+                        )}
+
+                        {activeTab === 'admission-bills' && (
+                            <AdmissionBillTab schoolDetails={schoolDetails} />
+                        )}
+
+                        {userRole === 'admin' && activeTab === 'settings' && (
                             <div className="max-w-4xl mx-auto">
                                 <Card className="mb-8 border-amber-200 bg-amber-50/30">
                                     <CardHeader>
@@ -4513,34 +4587,82 @@ function AdminDashboard() {
 
                                 <Card className="mb-8 border-violet-200 bg-violet-50/30">
                                     <CardHeader>
-                                        <CardTitle className="text-heading-md flex items-center gap-2 text-violet-800"><Mic className="w-6 h-6"/> Sendexa Voice Call Settings</CardTitle>
-                                        <CardDescription>Configure credentials for Automated Text-to-Speech Voice Calls via Sendexa.</CardDescription>
+                                        <CardTitle className="text-heading-md flex items-center gap-2 text-violet-800"><Mic className="w-6 h-6"/> Voice Call Settings</CardTitle>
+                                        <CardDescription>Configure credentials for Automated Text-to-Speech Voice Calls.</CardDescription>
                                     </CardHeader>
                                     <CardContent className="space-y-6">
                                           <div className="space-y-4">
-                                              <div className="space-y-2">
-                                                  <Label htmlFor="sendexaApiKey">Sendexa API Key</Label>
-                                                  <div className="relative">
-                                                      <Input 
-                                                          id="sendexaApiKey" 
-                                                          type="password"
-                                                          placeholder="From Sendexa Dashboard" 
-                                                          value={schoolSettingsForm.sendexaApiKey || ''} 
-                                                          onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, sendexaApiKey: e.target.value })} 
-                                                          disabled={isSubmitting} 
-                                                      />
-                                                  </div>
-                                              </div>
-                                              <div className="space-y-2">
-                                                  <Label htmlFor="sendexaVoiceCallerId">Caller ID (Sender Name / Phone)</Label>
-                                                  <Input 
-                                                      id="sendexaVoiceCallerId" 
-                                                      placeholder="e.g. SENDEXA or +233..." 
-                                                      value={schoolSettingsForm.sendexaVoiceCallerId || ''} 
-                                                      onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, sendexaVoiceCallerId: e.target.value })} 
-                                                      disabled={isSubmitting} 
-                                                  />
-                                              </div>
+                                              <Card>
+                                                <CardHeader>
+                                                <CardTitle className="text-heading-md flex items-center gap-2 text-violet-800"><Mic className="w-6 h-6"/> Sendexa Voice Call Settings</CardTitle>
+                                                <CardDescription>Configure credentials for Automated Text-to-Speech Voice Calls via Sendexa.</CardDescription>
+                                                </CardHeader>
+                                                <CardContent className="space-y-4">
+                                                      <div className="grid gap-2">
+                                                          <Label htmlFor="sendexaApiKey">Sendexa API Key</Label>
+                                                          <div className="relative">
+                                                              <Input 
+                                                                  id="sendexaApiKey" 
+                                                                  type={showSecretKey ? "text" : "password"} 
+                                                                  placeholder="From Sendexa Dashboard" 
+                                                                  value={schoolSettingsForm.sendexaApiKey || ''} 
+                                                                  onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, sendexaApiKey: e.target.value })} 
+                                                                  disabled={isSubmitting} 
+                                                                  className="pr-10"
+                                                              />
+                                                               <button type="button" onClick={() => setShowSecretKey(!showSecretKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                                                                    {showSecretKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+                                                                </button>
+                                                          </div>
+                                                      </div>
+                                                      <div className="grid gap-2">
+                                                          <Label htmlFor="sendexaVoiceCallerId">Caller ID (Sender Name / Phone)</Label>
+                                                          <Input 
+                                                              id="sendexaVoiceCallerId" 
+                                                              placeholder="e.g. SENDEXA or +233..." 
+                                                              value={schoolSettingsForm.sendexaVoiceCallerId || ''} 
+                                                              onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, sendexaVoiceCallerId: e.target.value })} 
+                                                              disabled={isSubmitting} 
+                                                          />
+                                                      </div>
+                                                </CardContent>
+                                            </Card>
+
+                                            <Card>
+                                                <CardHeader>
+                                                <CardTitle className="text-heading-md flex items-center gap-2 text-blue-800"><Mic className="w-6 h-6"/> Arkesel Voice Call Settings</CardTitle>
+                                                <CardDescription>Configure credentials for Automated Voice Calls via Arkesel.</CardDescription>
+                                                </CardHeader>
+                                                <CardContent className="space-y-4">
+                                                      <div className="grid gap-2">
+                                                          <Label htmlFor="arkeselApiKey">Arkesel API Key</Label>
+                                                          <div className="relative">
+                                                              <Input 
+                                                                  id="arkeselApiKey" 
+                                                                  type={showSecretKey ? "text" : "password"} 
+                                                                  placeholder="From Arkesel Dashboard" 
+                                                                  value={schoolSettingsForm.arkeselApiKey || ''} 
+                                                                  onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, arkeselApiKey: e.target.value })} 
+                                                                  disabled={isSubmitting} 
+                                                                  className="pr-10"
+                                                              />
+                                                               <button type="button" onClick={() => setShowSecretKey(!showSecretKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                                                                    {showSecretKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+                                                                </button>
+                                                          </div>
+                                                      </div>
+                                                      <div className="grid gap-2">
+                                                          <Label htmlFor="arkeselVoiceCallerId">Caller ID (Sender Name / Phone)</Label>
+                                                          <Input 
+                                                              id="arkeselVoiceCallerId" 
+                                                              placeholder="e.g. Arkesel or +233..." 
+                                                              value={schoolSettingsForm.arkeselVoiceCallerId || ''} 
+                                                              onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, arkeselVoiceCallerId: e.target.value })} 
+                                                              disabled={isSubmitting} 
+                                                          />
+                                                      </div>
+                                                </CardContent>
+                                            </Card>
                                           </div>
                                     </CardContent>
                                 </Card>
@@ -4642,7 +4764,19 @@ function AdminDashboard() {
                                                     <Input id="momoNumber" type="tel" placeholder="e.g. 0244123456" value={schoolSettingsForm.momoNumber} onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, momoNumber: e.target.value })} disabled={isSubmitting} />
                                                 </div>
                                             </div>
-                                            <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="customFeeBlockMessage">Custom Fee Block Message (Optional)</Label>
+                                                <Textarea 
+                                                    id="customFeeBlockMessage" 
+                                                    placeholder="e.g. Notice: Your child {studentName} was not allowed into the school premises today due to outstanding fee balances." 
+                                                    value={schoolSettingsForm.customFeeBlockMessage || ''} 
+                                                    onChange={e => setSchoolSettingsForm({ ...schoolSettingsForm, customFeeBlockMessage: e.target.value })} 
+                                                    disabled={isSubmitting} 
+                                                    className="min-h-[80px]"
+                                                />
+                                                <p className="text-xs text-muted-foreground">This message is sent to parents via SMS when a student is blocked at the gate due to unpaid fees. Use {'{studentName}'} to insert the child's name.</p>
+                                            </div>
+                                            <div className="space-y-4 mt-4">
                                                 <Label>Bank Account Details</Label>
                                                 <div className="space-y-4">
                                                     {schoolSettingsForm.bankAccounts.map((account, index) => (
@@ -4771,7 +4905,7 @@ function AdminDashboard() {
                                                                 </div>
                                                                 <div className="flex flex-col">
                                                                     <span className="font-bold text-sm tracking-tight capitalize">{cat.name}</span>
-                                                                    {cat.isDaily && <span className="text-[10px] uppercase font-black tracking-widest text-amber-600">Daily Fee</span>}
+                                                                    {cat.isDaily && <span className="text-[10px] uppercase font-black tracking-widest text-amber-600">Daily Recurring Fee</span>}
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
@@ -4857,6 +4991,7 @@ function AdminDashboard() {
                     students={students}
                     feeCategories={feeCategories}
                     currentPeriod={academicPeriods.find(p => p.id === selectedPeriodId) || academicPeriods.find(p => p.isCurrent)}
+                    periods={academicPeriods}
                 />
 
                 <Dialog open={isSettingsAuthOpen} onOpenChange={setIsSettingsAuthOpen}>
@@ -4977,7 +5112,7 @@ function AdminDashboard() {
                                         </datalist>
                                         <p className="text-xs text-muted-foreground">You can select an existing class or type a new one.</p>
                                     </div>
-                                    <div className="space-y-2"><Label htmlFor="add-dob">Date of Birth</Label><Input id="add-dob" type="date" value={addStudentForm.dateOfBirth} onChange={(e) => setAddStudentForm({...addStudentForm, dateOfBirth: e.target.value})} required disabled={isSubmitting} /></div>
+                                    <div className="space-y-2"><Label htmlFor="add-dob">Date of Birth</Label><DatePicker id="add-dob" value={addStudentForm.dateOfBirth} onChange={(val) => setAddStudentForm({...addStudentForm, dateOfBirth: val})} disabled={isSubmitting} /></div>
                                     <div className="space-y-2">
                                         <Label htmlFor="add-gender">Gender</Label>
                                         <Select value={addStudentForm.gender} onValueChange={(value: 'Male' | 'Female' | 'Other') => setAddStudentForm({...addStudentForm, gender: value})} required disabled={isSubmitting}>
@@ -4994,11 +5129,23 @@ function AdminDashboard() {
 
                                  {/* Column 2 */}
                                  <div className="space-y-4">
-                                    <div className="space-y-2"><Label htmlFor="add-parentId">Parent ID (for grouping families)</Label><Input id="add-parentId" value={addStudentForm.parentId} onChange={(e) => setAddStudentForm({...addStudentForm, parentId: e.target.value.toUpperCase()})} placeholder="e.g. FAM-DOE-01" disabled={isSubmitting} /></div>
-                                    <div className="space-y-2"><Label htmlFor="add-parentName">Parent/Guardian Name</Label><Input id="add-parentName" value={addStudentForm.parentName} onChange={(e) => setAddStudentForm({...addStudentForm, parentName: e.target.value})} placeholder="e.g. Jane Doe" required disabled={isSubmitting} /></div>
-                                    <div className="space-y-2"><Label htmlFor="add-parentPhone">Parent/Guardian Phone</Label><Input id="add-parentPhone" type="tel" value={addStudentForm.parentPhone} onChange={(e) => setAddStudentForm({...addStudentForm, parentPhone: e.target.value})} placeholder="e.g. 0244123456" required disabled={isSubmitting} /></div>
-                                    <div className="space-y-2"><Label htmlFor="add-emergencyName">Emergency Contact Name</Label><Input id="add-emergencyName" value={addStudentForm.emergencyContactName} onChange={(e) => setAddStudentForm({...addStudentForm, emergencyContactName: e.target.value})} placeholder="e.g. Mary Smith" required disabled={isSubmitting} /></div>
-                                    <div className="space-y-2"><Label htmlFor="add-emergencyPhone">Emergency Contact Phone</Label><Input id="add-emergencyPhone" type="tel" value={addStudentForm.emergencyContactPhone} onChange={(e) => setAddStudentForm({...addStudentForm, emergencyContactPhone: e.target.value})} placeholder="e.g. 0200123456" required disabled={isSubmitting} /></div>
+                                    <ParentSelector
+                                        parents={parents}
+                                        selectedParentId={addStudentForm.parentId || ''}
+                                        onSelectParent={(id) => setAddStudentForm({...addStudentForm, parentId: id})}
+                                        onAddNewParent={async (data) => {
+                                            if (!db || !auth || !schoolId) throw new Error("Missing dependencies");
+                                            const newId = await addParent(db, auth, schoolId, data as any);
+                                            await fetchAdminData();
+                                            return newId;
+                                        }}
+                                        onEditParent={async (parentId, data) => {
+                                            if (!db || !auth || !schoolId) throw new Error("Missing dependencies");
+                                            await updateParent(db, auth, schoolId, parentId, data as any);
+                                            await fetchAdminData();
+                                        }}
+                                        disabled={isSubmitting}
+                                    />
                                     <div className="space-y-2"><Label htmlFor="add-medical">Medical Notes (Allergies, etc.)</Label><Textarea id="add-medical" value={addStudentForm.medicalNotes} onChange={(e) => setAddStudentForm({...addStudentForm, medicalNotes: e.target.value})} placeholder="e.g. Allergic to peanuts" disabled={isSubmitting}/></div>
                                     <div className="space-y-2">
                                         <Label htmlFor="add-voiceLanguage">Voice Reminder Language</Label>
@@ -5029,8 +5176,6 @@ function AdminDashboard() {
                                     </div>
                                  </div>
                             </div>
-
-
 
                             <DialogFooter className="pt-6">
                                 <DialogClose asChild><Button type="button" variant="outline" disabled={isSubmitting}>Cancel</Button></DialogClose>
@@ -5078,7 +5223,7 @@ function AdminDashboard() {
                                     </datalist>
                                 </div>
 
-                                <div className="space-y-2"><Label htmlFor="edit-dob">Date of Birth</Label><Input id="edit-dob" type="date" value={editStudentForm.dateOfBirth} onChange={(e) => setEditStudentForm({...editStudentForm, dateOfBirth: e.target.value})} required disabled={isSubmitting} /></div>
+                                <div className="space-y-2"><Label htmlFor="edit-dob">Date of Birth</Label><DatePicker id="edit-dob" value={editStudentForm.dateOfBirth} onChange={(val) => setEditStudentForm({...editStudentForm, dateOfBirth: val})} disabled={isSubmitting} /></div>
                                 <div className="space-y-2">
                                     <Label htmlFor="edit-gender">Gender</Label>
                                     <Select value={editStudentForm.gender} onValueChange={(value: 'Male' | 'Female' | 'Other') => setEditStudentForm({...editStudentForm, gender: value})} required disabled={isSubmitting}>
@@ -5092,11 +5237,25 @@ function AdminDashboard() {
                                 </div>
                                  <div className="space-y-2 md:col-span-2"><Label htmlFor="edit-address">Home Address</Label><Textarea id="edit-address" value={editStudentForm.address} onChange={(e) => setEditStudentForm({...editStudentForm, address: e.target.value})} required disabled={isSubmitting}/></div>
 
-                                 <div className="space-y-2"><Label htmlFor="edit-parentId">Parent ID (for grouping families)</Label><Input id="edit-parentId" value={editStudentForm.parentId} onChange={(e) => setEditStudentForm({...editStudentForm, parentId: e.target.value.toUpperCase()})} placeholder="e.g. FAM-DOE-01" disabled={isSubmitting} /></div>
-                                 <div className="space-y-2"><Label htmlFor="edit-parentName">Parent/Guardian Name</Label><Input id="edit-parentName" value={editStudentForm.parentName} onChange={(e) => setEditStudentForm({...editStudentForm, parentName: e.target.value})} required disabled={isSubmitting} /></div>
-                                 <div className="space-y-2"><Label htmlFor="edit-parentPhone">Parent/Guardian Phone</Label><Input id="edit-parentPhone" type="tel" value={editStudentForm.parentPhone} onChange={(e) => setEditStudentForm({...editStudentForm, parentPhone: e.target.value})} required disabled={isSubmitting} /></div>
-                                 <div className="space-y-2"><Label htmlFor="edit-emergencyName">Emergency Contact Name</Label><Input id="edit-emergencyName" value={editStudentForm.emergencyContactName} onChange={(e) => setEditStudentForm({...editStudentForm, emergencyContactName: e.target.value})} required disabled={isSubmitting} /></div>
-                                 <div className="space-y-2"><Label htmlFor="edit-emergencyPhone">Emergency Contact Phone</Label><Input id="edit-emergencyPhone" type="tel" value={editStudentForm.emergencyContactPhone} onChange={(e) => setEditStudentForm({...editStudentForm, emergencyContactPhone: e.target.value})} required disabled={isSubmitting} /></div>
+                                 <div className="space-y-2 md:col-span-2">
+                                    <ParentSelector
+                                        parents={parents}
+                                        selectedParentId={editStudentForm.parentId || ''}
+                                        onSelectParent={(id) => setEditStudentForm({...editStudentForm, parentId: id})}
+                                        onAddNewParent={async (data) => {
+                                            if (!db || !auth || !schoolId) throw new Error("Missing dependencies");
+                                            const newId = await addParent(db, auth, schoolId, data as any);
+                                            await fetchAdminData();
+                                            return newId;
+                                        }}
+                                        onEditParent={async (parentId, data) => {
+                                            if (!db || !auth || !schoolId) throw new Error("Missing dependencies");
+                                            await updateParent(db, auth, schoolId, parentId, data as any);
+                                            await fetchAdminData();
+                                        }}
+                                        disabled={isSubmitting}
+                                    />
+                                 </div>
 
                                  <div className="space-y-2 md:col-span-2"><Label htmlFor="edit-medical">Medical Notes</Label><Textarea id="edit-medical" value={editStudentForm.medicalNotes} onChange={(e) => setEditStudentForm({...editStudentForm, medicalNotes: e.target.value})} disabled={isSubmitting}/></div>
                                  <div className="space-y-2">
@@ -5124,6 +5283,20 @@ function AdminDashboard() {
                                         disabled={isSubmitting} 
                                     />
                                     <p className="text-[10px] text-muted-foreground italic">Applied automatically to bulk class fees.</p>
+                                 </div>
+                                 <div className="space-y-4 md:col-span-2 border-t pt-4 mt-4">
+                                    <Label className="text-destructive font-bold">Security & Access</Label>
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <Button type="button" variant="outline" className="border-destructive text-destructive hover:bg-destructive/10" onClick={() => handleResetPin(true)}>
+                                            Reset Student PIN to 1234
+                                        </Button>
+                                        {selectedStudentForEdit?.parentId && (
+                                            <Button type="button" variant="outline" className="border-destructive text-destructive hover:bg-destructive/10" onClick={() => handleResetPin(false)}>
+                                                Reset Parent PIN to 1234
+                                            </Button>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground italic">If the user forgets their PIN, click to reset it to the default (1234). They will be forced to change it on next login.</p>
                                  </div>
 
                              </div>
@@ -5156,10 +5329,10 @@ function AdminDashboard() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 pt-4 border-t">
                                     <div className="space-y-4">
                                         <h3 className="font-semibold text-lg border-b pb-2">Contact Information</h3>
-                                        <DetailItem icon={UserCircle} label="Parent/Guardian" value={selectedStudentForView.parentName} />
-                                        <DetailItem icon={Phone} label="Parent Phone" value={selectedStudentForView.parentPhone} />
+                                        <DetailItem icon={UserCircle} label="Parent/Guardian" value={selectedStudentForView.parentName || 'Not Available'} />
+                                        <DetailItem icon={Phone} label="Parent Phone" value={selectedStudentForView.parentPhone || 'Not Available'} />
                                         <DetailItem icon={Mail} label="Parent Email" value="Not Available" />
-                                        <DetailItem icon={Home} label="Home Address" value={selectedStudentForView.address} />
+                                        <DetailItem icon={Home} label="Home Address" value={selectedStudentForView.address || 'Not Available'} />
                                     </div>
                                     <div className="space-y-4">
                                          <h3 className="font-semibold text-lg border-b pb-2">Emergency &amp; Medical</h3>
@@ -5177,31 +5350,84 @@ function AdminDashboard() {
                 </Dialog>
 
                  <Dialog open={isSalaryDialogOpen} onOpenChange={setIsSalaryDialogOpen}>
-                    <DialogContent>
+                    <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
                         <DialogHeader>
-                            <DialogTitle>Set Salary for {selectedStaffForSalary?.name}</DialogTitle>
-                            <DialogDescription>Enter the monthly salary amount for this staff member.</DialogDescription>
+                            <DialogTitle>Staff Details: {selectedStaffForSalary?.name}</DialogTitle>
+                            <DialogDescription>Manage HR, payroll, and emergency contact information.</DialogDescription>
                         </DialogHeader>
-                        <form onSubmit={handleSalarySubmit}>
-                            <div className="py-4">
-                                <Label htmlFor="salary-amount" className="sr-only">Salary Amount</Label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">GH¢</span>
-                                    <Input 
-                                        id="salary-amount"
-                                        type="number" 
-                                        placeholder="0.00" 
-                                        className="pl-10"
-                                        value={salaryForm.amount}
-                                        onChange={(e) => setSalaryForm({ amount: e.target.value })}
-                                        required
-                                        disabled={isSubmitting}
-                                    />
+                        <form onSubmit={handleSalarySubmit} className="flex-1 overflow-hidden flex flex-col">
+                            <ScrollArea className="flex-1 px-1 pr-4">
+                                <div className="space-y-6 py-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="salary-amount">Monthly Salary (GH¢) *</Label>
+                                            <Input 
+                                                id="salary-amount" type="number" placeholder="0.00" 
+                                                value={staffDetailsForm.amount}
+                                                onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, amount: e.target.value })}
+                                                required disabled={isSubmitting}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="contractType">Contract Type</Label>
+                                            <Select value={staffDetailsForm.contractType} onValueChange={(val) => setStaffDetailsForm({ ...staffDetailsForm, contractType: val })}>
+                                                <SelectTrigger id="contractType"><SelectValue placeholder="Select type" /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Full-time">Full-time</SelectItem>
+                                                    <SelectItem value="Part-time">Part-time</SelectItem>
+                                                    <SelectItem value="NSS">National Service (NSS)</SelectItem>
+                                                    <SelectItem value="Contract">Contract</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="ssnitNumber">SSNIT Number</Label>
+                                            <Input id="ssnitNumber" value={staffDetailsForm.ssnitNumber} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, ssnitNumber: e.target.value })} disabled={isSubmitting} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="ghanaCardNumber">Ghana Card Number</Label>
+                                            <Input id="ghanaCardNumber" placeholder="GHA-XXXXXXXXX-X" value={staffDetailsForm.ghanaCardNumber} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, ghanaCardNumber: e.target.value })} disabled={isSubmitting} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="bankName">Bank Name</Label>
+                                            <Input id="bankName" value={staffDetailsForm.bankName} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, bankName: e.target.value })} disabled={isSubmitting} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="accountNumber">Account Number</Label>
+                                            <Input id="accountNumber" value={staffDetailsForm.accountNumber} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, accountNumber: e.target.value })} disabled={isSubmitting} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="dateOfHire">Date of Hire</Label>
+                                            <DatePicker id="dateOfHire" value={staffDetailsForm.dateOfHire} onChange={(val) => setStaffDetailsForm({ ...staffDetailsForm, dateOfHire: val })} disabled={isSubmitting} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="qualifications">Qualifications</Label>
+                                            <Input id="qualifications" placeholder="e.g. B.Ed Mathematics" value={staffDetailsForm.qualifications} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, qualifications: e.target.value })} disabled={isSubmitting} />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4 pt-4 border-t border-border">
+                                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Emergency & Contact Info</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="emergencyContactName">Emergency Contact Name</Label>
+                                                <Input id="emergencyContactName" value={staffDetailsForm.emergencyContactName} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, emergencyContactName: e.target.value })} disabled={isSubmitting} />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="emergencyContactPhone">Emergency Contact Phone</Label>
+                                                <Input id="emergencyContactPhone" type="tel" value={staffDetailsForm.emergencyContactPhone} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, emergencyContactPhone: e.target.value })} disabled={isSubmitting} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="address">Residential Address</Label>
+                                            <Textarea id="address" rows={2} value={staffDetailsForm.address} onChange={(e) => setStaffDetailsForm({ ...staffDetailsForm, address: e.target.value })} disabled={isSubmitting} />
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <DialogFooter>
+                            </ScrollArea>
+                            <DialogFooter className="mt-4 pt-4 border-t border-border">
                                 <DialogClose asChild><Button type="button" variant="outline" disabled={isSubmitting}>Cancel</Button></DialogClose>
-                                <Button type="submit" disabled={isSubmitting}>{isSubmitting ? <><Loader2 className="animate-spin" /> Saving...</> : 'Save Salary'}</Button>
+                                <Button type="submit" disabled={isSubmitting}>{isSubmitting ? <><Loader2 className="animate-spin" /> Saving...</> : 'Save Details'}</Button>
                             </DialogFooter>
                         </form>
                     </DialogContent>
@@ -5238,7 +5464,7 @@ function AdminDashboard() {
                 <AlertDialog open={!!categoryToClear} onOpenChange={(isOpen) => !isOpen && setCategoryToClear(null)}>
                     <AlertDialogContent>
                         <AlertDialogHeader>
-                            <AlertDialogTitle>Clear Daily Fees?</AlertDialogTitle>
+                            <AlertDialogTitle>Clear Daily Recurring Fees?</AlertDialogTitle>
                             <AlertDialogDescription>
                                 Are you sure you want to clear/void ALL <span className="font-semibold">{categoryToClear?.categoryName}</span> records for this student? This will reset their balance for this fee category.
                             </AlertDialogDescription>
@@ -5283,6 +5509,7 @@ function AdminDashboard() {
                         db={db}
                         auth={auth}
                         periodId={selectedPeriodId || undefined}
+                        periods={academicPeriods}
                         onSuccess={fetchAdminData}
                     />
                 )}
@@ -5297,6 +5524,7 @@ function AdminDashboard() {
                         db={db}
                         auth={auth}
                         period={selectedPeriod}
+                        periods={academicPeriods}
                         onSuccess={fetchAdminData}
                     />
                 )}
@@ -5317,6 +5545,28 @@ function AdminDashboard() {
                     filterType={feesActiveSubTab as 'main' | 'daily'}
                 />
 
+                <ApplyAdmissionBillModal
+                    isOpen={isAdmissionBillModalOpen}
+                    onClose={() => setIsAdmissionBillModalOpen(false)}
+                    student={selectedStudent}
+                    schoolId={schoolId || ''}
+                    db={db}
+                    auth={auth}
+                    onSuccess={fetchAdminData}
+                    feeCategories={feeCategories}
+                    periodId={selectedPeriodId || ''}
+                />
+
+                <VoidTransactionModal
+                    isOpen={!!transactionToVoid}
+                    onClose={() => setTransactionToVoid(null)}
+                    studentId={selectedStudentId || ''}
+                    transactionId={transactionToVoid || ''}
+                    schoolId={schoolId || ''}
+                    db={db}
+                    auth={auth}
+                    onSuccess={fetchAdminData}
+                />
 
                 {/* Bulk Class Fee Dialog */}
                 <Dialog open={isBulkFeeDialogOpen} onOpenChange={setIsBulkFeeDialogOpen}>
@@ -5339,7 +5589,7 @@ function AdminDashboard() {
                                                 <SelectValue placeholder="Select Category" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {(feesActiveSubTab === 'daily' ? dailyCategoriesForModal : feeCategories).map(cat => (
+                                                {(feesActiveSubTab === 'daily' ? dailyCategoriesForModal : feeCategories.filter(c => !c.isDaily)).map(cat => (
                                                     <SelectItem key={cat.id} value={cat.id} className="font-bold">{cat.name}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -5529,6 +5779,7 @@ function AdminDashboard() {
                                                         <div className="space-y-2">
                                                             <Label className="text-xs font-black uppercase text-muted-foreground ml-1">Academic Year</Label>
                                                             <Input placeholder="e.g. 2025/2026" value={newPeriodForm.year} onChange={e => setNewPeriodForm({...newPeriodForm, year: e.target.value})} required disabled={isSubmitting} className="h-12 bg-background border-primary/10 text-lg font-bold rounded-2xl focus:ring-primary/20"/>
+                                                            <p className="text-xs text-muted-foreground/60 ml-1 leading-none mt-1">Format: YYYY/YYYY (e.g. 2026/2027)</p>
                                                         </div>
                                                         <div className="space-y-2">
                                                             <Label className="text-xs font-black uppercase text-muted-foreground ml-1">Term Name</Label>
@@ -5540,28 +5791,33 @@ function AdminDashboard() {
                                                                     <SelectItem value="Third Term" className="font-bold">Third Term</SelectItem>
                                                                 </SelectContent>
                                                             </Select>
+                                                            <p className="text-xs text-muted-foreground/60 ml-1 leading-none mt-1">Select the current school term</p>
                                                         </div>
                                                     </div>
 
                                                     <div className="grid grid-cols-2 gap-6">
                                                         <div className="space-y-2">
                                                             <Label className="text-xs font-black uppercase text-muted-foreground ml-1">Start Date</Label>
-                                                            <Input type="date" value={newPeriodForm.startDate} onChange={e => setNewPeriodForm({...newPeriodForm, startDate: e.target.value})} required disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <DatePicker value={newPeriodForm.startDate} onChange={val => setNewPeriodForm({...newPeriodForm, startDate: val})} disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <p className="text-xs text-muted-foreground/60 ml-1 leading-none mt-1">When students return to school</p>
                                                         </div>
                                                         <div className="space-y-2">
                                                             <Label className="text-xs font-black uppercase text-muted-foreground ml-1">End Date</Label>
-                                                            <Input type="date" value={newPeriodForm.endDate} onChange={e => setNewPeriodForm({...newPeriodForm, endDate: e.target.value})} required disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <DatePicker value={newPeriodForm.endDate} onChange={val => setNewPeriodForm({...newPeriodForm, endDate: val})} disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <p className="text-xs text-muted-foreground/60 ml-1 leading-none mt-1">Last day of the term</p>
                                                         </div>
                                                     </div>
 
                                                     <div className="grid grid-cols-2 gap-6">
                                                         <div className="space-y-2">
-                                                            <Label className="text-xs font-black uppercase text-muted-foreground ml-1">Vacation Date</Label>
-                                                            <Input type="date" value={newPeriodForm.vacationDate} onChange={e => setNewPeriodForm({...newPeriodForm, vacationDate: e.target.value})} disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <Label className="text-xs font-black uppercase text-muted-foreground ml-1">Mid-Term Break Date</Label>
+                                                            <DatePicker value={newPeriodForm.vacationDate} onChange={val => setNewPeriodForm({...newPeriodForm, vacationDate: val})} disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <p className="text-xs text-muted-foreground/60 ml-1 leading-none mt-1">When the mid-term or end-of-term break starts</p>
                                                         </div>
                                                         <div className="space-y-2">
-                                                            <Label className="text-xs font-black uppercase text-muted-foreground ml-1">Next Term Begins</Label>
-                                                            <Input type="date" value={newPeriodForm.nextTermBegins} onChange={e => setNewPeriodForm({...newPeriodForm, nextTermBegins: e.target.value})} disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <Label className="text-xs font-black uppercase text-muted-foreground ml-1">Next Term Start Date</Label>
+                                                            <DatePicker value={newPeriodForm.nextTermBegins} onChange={val => setNewPeriodForm({...newPeriodForm, nextTermBegins: val})} disabled={isSubmitting} className="h-12 bg-background border-primary/10 font-bold rounded-2xl"/>
+                                                            <p className="text-xs text-muted-foreground/60 ml-1 leading-none mt-1">Date when the following term starts</p>
                                                         </div>
                                                     </div>
                                                 </CardContent>
@@ -5803,10 +6059,61 @@ function AdminDashboard() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <BulkFeeReminderModal
+                isOpen={isBulkReminderModalOpen}
+                onClose={() => setIsBulkReminderModalOpen(false)}
+                students={students}
+                parents={parents}
+                feeCategories={feeCategories}
+                schoolId={schoolId}
+            />
+            <GenerateTermBillsModal
+                isOpen={isGenerateTermBillsModalOpen}
+                onClose={() => setIsGenerateTermBillsModalOpen(false)}
+                school={schoolDetails}
+                students={students}
+                parents={parents}
+                initialStudentId={selectedStudentId}
+                initialClassName={selectedClassForFees !== 'all' ? selectedClassForFees : null}
+                currentPeriodId={selectedPeriodId}
+                periods={academicPeriods}
+                feeCategories={feeCategories}
+            />
+
+            <MonthlyReportConfigModal
+                isOpen={isReportConfigModalOpen}
+                onClose={() => setIsReportConfigModalOpen(false)}
+                onGenerate={(config) => setPrintReportConfig(config)}
+            />
+            <BulkDailyRatesModal
+                isOpen={isBulkDailyRatesModalOpen}
+                onClose={() => setBulkDailyRatesModalOpen(false)}
+                students={selectedClassForFees !== 'all' ? students.filter(s => s.className === selectedClassForFees && !s.isArchived) : []}
+                feeCategories={feeCategories}
+                db={db}
+                auth={auth}
+                storage={storage}
+                schoolId={schoolId}
+                onSuccess={() => {
+                    fetchAdminData();
+                }}
+            />
+            {db && auth && storage && schoolId && (
+                <MigrationModal
+                    isOpen={isMigrationModalOpen}
+                    onClose={() => setIsMigrationModalOpen(false)}
+                    students={students}
+                    db={db}
+                    auth={auth}
+                    storage={storage}
+                    schoolId={schoolId}
+                    onComplete={() => fetchAdminData()}
+                />
+            )}
             </>
     );
 }
-
 
 const DetailItem = ({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string }) => (
     <div className="flex items-start gap-3">
@@ -5821,47 +6128,62 @@ const DetailItem = ({ icon: Icon, label, value }: { icon: React.ElementType, lab
 interface ExpenditureSectionProps {
     title: string;
     description: string;
-    expenditureType: 'General' | 'Feeding' | 'Transportation';
     income: number;
     totalExpenditure: number;
     expenditures: Expenditure[];
     categories: string[];
-    onAddExpenditure: (e: React.FormEvent) => Promise<void>;
+    onAddExpenditure: (form: typeof defaultExpenditureForm) => Promise<void>;
     onDeleteExpenditure: (exp: Expenditure) => void;
-    formState: {
-        expenditureForm: typeof defaultExpenditureForm;
-        setExpenditureForm: React.Dispatch<React.SetStateAction<typeof defaultExpenditureForm>>;
-    };
     isSubmitting: boolean;
 }
 
 const ExpenditureSection: React.FC<ExpenditureSectionProps> = ({
     title,
     description,
-    expenditureType,
     income,
     totalExpenditure,
     expenditures,
     categories,
     onAddExpenditure,
     onDeleteExpenditure,
-    formState,
     isSubmitting,
 }) => {
-    const { expenditureForm, setExpenditureForm } = formState;
+    const [localForm, setLocalForm] = useState({ ...defaultExpenditureForm });
+    const [isCategorizing, setIsCategorizing] = useState(false);
+    const [aiSuggested, setAiSuggested] = useState(false);
     const net = income - totalExpenditure;
-
-    const handleFormSubmit = (e: React.FormEvent) => {
-        // Prevent default form submission which reloads the page
-        e.preventDefault();
+    
+    // Auto categorize when description blurs
+    const handleBlurDescription = async () => {
+        if (!localForm.description || localForm.description.length < 3) return;
         
-        // Update the form state with the correct type right before submission
-        setExpenditureForm(prev => ({...prev, type: expenditureType}));
+        setIsCategorizing(true);
+        setAiSuggested(false);
+        try {
+            const res = await fetch('/api/ai/categorize-expenditure', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ description: localForm.description })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.category && data.category !== 'Other') {
+                    setLocalForm(prev => ({ ...prev, category: data.category }));
+                    setAiSuggested(true);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to auto-categorize:", error);
+        } finally {
+            setIsCategorizing(false);
+        }
+    };
 
-        // We need a slight delay to ensure the state is updated before calling the main handler
-        setTimeout(() => {
-            onAddExpenditure(e);
-        }, 0);
+    const handleFormSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await onAddExpenditure(localForm);
+        setLocalForm({ ...defaultExpenditureForm });
+        setAiSuggested(false);
     }
     
     return (
@@ -5887,13 +6209,28 @@ const ExpenditureSection: React.FC<ExpenditureSectionProps> = ({
                         <CardHeader><CardTitle className="text-heading-md">Record New Expenditure</CardTitle></CardHeader>
                         <form onSubmit={handleFormSubmit}>
                             <CardContent className="space-y-4">
-                                <div className="space-y-2"><Label>Description</Label><Input placeholder="e.g. Purchase of new textbooks" value={expenditureForm.description} onChange={e => setExpenditureForm({...expenditureForm, description: e.target.value})} required disabled={isSubmitting}/></div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2"><Label>Amount (GH¢)</Label><Input type="number" placeholder="0.00" value={expenditureForm.amount} onChange={e => setExpenditureForm({...expenditureForm, amount: e.target.value})} required disabled={isSubmitting}/></div>
-                                    <div className="space-y-2"><Label>Date</Label><Input type="date" value={expenditureForm.date} onChange={e => setExpenditureForm({...expenditureForm, date: e.target.value})} required disabled={isSubmitting}/></div>
+                                <div className="space-y-2">
+                                    <Label>Description</Label>
+                                    <Input 
+                                        placeholder="e.g. Purchase of new textbooks" 
+                                        value={localForm.description} 
+                                        onChange={e => setLocalForm({...localForm, description: e.target.value})} 
+                                        onBlur={handleBlurDescription}
+                                        required 
+                                        disabled={isSubmitting}
+                                    />
+                                    {isCategorizing && <p className="text-xs text-muted-foreground animate-pulse flex items-center gap-1"><Sparkles className="w-3 h-3"/> AI is categorizing...</p>}
                                 </div>
-                                <div className="space-y-2"><Label>Category</Label>
-                                    <Select value={expenditureForm.category} onValueChange={(value) => setExpenditureForm({...expenditureForm, category: value})} required disabled={isSubmitting}>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2"><Label>Amount (GH¢)</Label><Input type="number" placeholder="0.00" value={localForm.amount} onChange={e => setLocalForm({...localForm, amount: e.target.value})} required disabled={isSubmitting}/></div>
+                                    <div className="space-y-2"><Label>Date</Label><DatePicker value={localForm.date} onChange={val => setLocalForm({...localForm, date: val})} disabled={isSubmitting}/></div>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <Label>Category</Label>
+                                        {aiSuggested && <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full flex items-center gap-1"><Sparkles className="w-3 h-3"/> AI Suggested</span>}
+                                    </div>
+                                    <Select value={localForm.category} onValueChange={(value) => { setLocalForm({...localForm, category: value}); setAiSuggested(false); }} required disabled={isSubmitting}>
                                         <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
                                         <SelectContent>{categories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
                                     </Select>
@@ -5913,7 +6250,7 @@ const ExpenditureSection: React.FC<ExpenditureSectionProps> = ({
                                         {expenditures.map(exp => (
                                             <TableRow key={exp.id}>
                                                 <TableCell><div className="font-medium">{exp.description}</div><div className="text-xs text-muted-foreground">{exp.category} &bull; {new Date(exp.date).toLocaleDateString('en-GB')}</div></TableCell>
-                                                <TableCell className="text-right text-numeric">GH¢{exp.amount.toFixed(2)}</TableCell>
+                                                <TableCell className="text-right text-numeric">GH¢{Number(exp.amount).toFixed(2)}</TableCell>
                                                 <TableCell className="text-right"><Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => onDeleteExpenditure(exp)} disabled={isSubmitting}><Trash2 className="h-4 w-4" /></Button></TableCell>
                                             </TableRow>
                                         ))}
@@ -5926,10 +6263,12 @@ const ExpenditureSection: React.FC<ExpenditureSectionProps> = ({
                 </div>
             </CardContent>
         </Card>
+
     );
 };
 
 export default function AdminDashboardPage() {
+
     return (
         <TooltipProvider>
             <Suspense fallback={<div className="min-h-screen w-full flex items-center justify-center bg-background"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>}>
@@ -5939,4 +6278,3 @@ export default function AdminDashboardPage() {
     )
 }
 
-    

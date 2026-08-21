@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -37,7 +38,7 @@ export function ManageHomeworkTab({ homework, isLoading, isSubmitting, homeworkF
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="hw-due">Due Date</Label>
-                            <Input id="hw-due" type="date" value={homeworkForm.dueDate} onChange={e => setHomeworkForm({...homeworkForm, dueDate: e.target.value})} required disabled={isSubmitting}/>
+                            <DatePicker id="hw-due" value={homeworkForm.dueDate} onChange={val => setHomeworkForm({...homeworkForm, dueDate: val})} disabled={isSubmitting}/>
                         </div>
                     </CardContent>
                     <div className="p-6 pt-0">

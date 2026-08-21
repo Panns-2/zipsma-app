@@ -4,11 +4,10 @@ import { getFirebaseConfig } from '@/firebase/config';
 import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { sendNotificationToUser, sendNotificationToAllParents } from '@/lib/notification-utils';
 
-// Initialize Firebase using the project's standard configuration
-const { db } = initializeFirebase(getFirebaseConfig());
-
 export async function POST(request: Request) {
     try {
+        // Initialize Firebase lazily inside the handler to prevent deployment timeouts
+        const { db } = initializeFirebase(getFirebaseConfig());
         const body = await request.json();
         const { schoolId, message, recipient, specificParent, notificationOnly } = body;
 
@@ -41,37 +40,67 @@ export async function POST(request: Request) {
         let targetPhones = new Set<string>();
 
         if (recipient === 'all') {
+            const parentsRef = collection(db, 'parents');
+            const pq = query(parentsRef, where('schoolId', '==', schoolId.toUpperCase()));
+            const parentsSnapshot = await getDocs(pq);
+            parentsSnapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.phone && data.phone.trim() !== '') {
+                    targetPhones.add(data.phone.trim());
+                }
+            });
+
             const studentsRef = collection(db, 'students');
             const q = query(studentsRef, where('schoolId', '==', schoolId.toUpperCase()));
             const studentsSnapshot = await getDocs(q);
             studentsSnapshot.forEach(doc => {
                 const data = doc.data();
-                if (data.parentPhone && data.parentPhone.trim() !== '') {
+                if (!data.parentId && data.parentPhone && data.parentPhone.trim() !== '') {
                     targetPhones.add(data.parentPhone.trim());
                 }
             });
         } else if (recipient === 'specific' && specificParent) {
-            const studentDocRef = doc(db, 'students', specificParent);
-            const studentDoc = await getDoc(studentDocRef);
+            const parentDocRef = doc(db, 'parents', specificParent);
+            const parentDoc = await getDoc(parentDocRef);
             
-            if (studentDoc.exists()) {
-                const data = studentDoc.data();
-                if (data.schoolId === schoolId.toUpperCase()) {
-                    const parentPhone = data.parentPhone;
-                    if (parentPhone) targetPhones.add(parentPhone.trim());
+            if (parentDoc.exists()) {
+                const data = parentDoc.data();
+                if (data.schoolId === schoolId.toUpperCase() && data.phone) {
+                    targetPhones.add(data.phone.trim());
                 }
             } else {
-                 const studentsRef = collection(db, 'students');
-                 const q = query(studentsRef, 
-                     where('schoolId', '==', schoolId.toUpperCase()), 
-                     where('parentId', '==', specificParent)
-                 );
-                 const parentStudentsSnapshot = await getDocs(q);
-                 parentStudentsSnapshot.forEach(doc => {
-                     const data = doc.data();
-                     if (data.parentPhone) targetPhones.add(data.parentPhone.trim());
-                 });
+                const studentDocRef = doc(db, 'students', specificParent);
+                const studentDoc = await getDoc(studentDocRef);
+                
+                if (studentDoc.exists()) {
+                    const data = studentDoc.data();
+                    if (data.schoolId === schoolId.toUpperCase()) {
+                        if (data.parentId) {
+                            const pDoc = await getDoc(doc(db, 'parents', data.parentId));
+                            if (pDoc.exists() && pDoc.data().phone) {
+                                targetPhones.add(pDoc.data().phone.trim());
+                            }
+                        } else if (data.parentPhone) {
+                            targetPhones.add(data.parentPhone.trim());
+                        }
+                    }
+                } else {
+                     const studentsRef = collection(db, 'students');
+                     const q = query(studentsRef, 
+                         where('schoolId', '==', schoolId.toUpperCase()), 
+                         where('parentId', '==', specificParent)
+                     );
+                     const parentStudentsSnapshot = await getDocs(q);
+                     parentStudentsSnapshot.forEach(doc => {
+                         const data = doc.data();
+                         if (!data.parentId && data.parentPhone) {
+                             targetPhones.add(data.parentPhone.trim());
+                         }
+                     });
+                }
             }
+        } else if (recipient === 'custom' && body.customPhone) {
+            targetPhones.add(body.customPhone.trim());
         }
 
         let successfulSends = 0;

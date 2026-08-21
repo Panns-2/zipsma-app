@@ -48,8 +48,8 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                     <TableHeader className="bg-primary/5">
                         <TableRow className="hover:bg-transparent border-primary/10">
                             <TableHead className="w-[160px] font-bold text-primary text-sm uppercase tracking-wider font-jakarta">Date</TableHead>
-                            <TableHead className="font-bold text-primary text-sm uppercase tracking-wider font-jakarta">Description</TableHead>
-                            <TableHead className="text-right font-bold text-primary text-sm uppercase tracking-wider font-jakarta">{hideDailyAmounts ? 'Daily Rate' : 'Charges'}</TableHead>
+                            <TableHead className="font-bold text-primary text-sm uppercase tracking-wider font-jakarta">Category (Description)</TableHead>
+                            <TableHead className="text-right font-bold text-primary text-sm uppercase tracking-wider font-jakarta">{hideDailyAmounts ? 'Amount' : 'Charges'}</TableHead>
                             <TableHead className="text-right font-bold text-primary text-sm uppercase tracking-wider font-jakarta">{hideDailyAmounts ? 'Credit Balance' : 'Balance'}</TableHead>
                             <TableHead className="text-right font-bold text-primary text-sm uppercase tracking-wider font-jakarta">Actions</TableHead>
                         </TableRow>
@@ -95,22 +95,30 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                                                     colorClass = fallbackColors[hash % fallbackColors.length] || colorClass;
                                                 }
                                                 
-                                                // Resolve description text
-                                                const descObj = feeCategories.find(c => c.id === t.description);
-                                                let displayDesc = descObj ? descObj.name : t.description;
+                                                let displayDesc = '';
+                                                if (catObj && catObj.name) {
+                                                    displayDesc = catObj.name;
+                                                } else {
+                                                    const rawVal = t.category || t.description || 'Transaction';
+                                                    // Format nicely if it's just a string like 'payment'
+                                                    displayDesc = rawVal.charAt(0).toUpperCase() + rawVal.slice(1);
+                                                }
                                                 
-                                                if (displayDesc === 'feeding') displayDesc = 'Feeding Fee';
-                                                else if (displayDesc === 'transportation') displayDesc = 'Transportation';
-                                                else if (displayDesc === 'general') displayDesc = 'General Fee';
+                                                if (displayDesc.toLowerCase() === 'feeding') displayDesc = 'Feeding Fee';
+                                                else if (displayDesc.toLowerCase() === 'transportation') displayDesc = 'Transportation';
+                                                else if (displayDesc.toLowerCase() === 'general') displayDesc = 'General Fee';
                                                 
-                                                if (displayDesc === 'Daily Fee Deduction' && t.category) {
-                                                    const catObj = feeCategories.find(c => c.id === t.category || c.name === t.category);
-                                                    if (catObj) {
-                                                        displayDesc = `Daily ${catObj.name}`;
-                                                    } else if (t.category !== 'daily' && t.category !== 'feeding') {
-                                                        // Fallback if category name is not found but it has a specific ID
-                                                        displayDesc = `Daily Fee: ${t.category.charAt(0).toUpperCase() + t.category.slice(1).replace(/_/g, ' ')}`;
-                                                    }
+                                                if (t.description === 'Daily Recurring Fee Deduction' && catObj) {
+                                                    displayDesc = `Daily ${catObj.name}`;
+                                                } else if (t.description === 'Daily Recurring Fee Deduction' && t.category !== 'daily' && t.category !== 'feeding') {
+                                                    displayDesc = `Daily Recurring Fee: ${t.category ? t.category.charAt(0).toUpperCase() + t.category.slice(1).replace(/_/g, ' ') : ''}`;
+                                                }
+                                                
+                                                // Append description if it adds useful context and isn't redundant
+                                                if (t.description && t.description !== t.category && t.description !== displayDesc && t.description.toLowerCase() !== 'class fee' && t.description.toLowerCase() !== 'fees payment' && t.description !== 'Daily Recurring Fee Deduction') {
+                                                    displayDesc = `${displayDesc} (${t.description})`;
+                                                } else if (t.type === 'payment' && !catObj && t.description) {
+                                                    displayDesc = t.description;
                                                 }
                                                 
                                                 displayDesc = displayDesc || 'Transaction';
@@ -169,7 +177,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                                                                         'transportation': 'Transportation'
                                                                     };
                                                                     const displayCategory = categoryMap[t.category] || (t.category.charAt(0).toUpperCase() + t.category.slice(1));
-                                                                    generateReceipt(schoolDetails, student, { id: t.id as any, amount: t.credit, date: t.date, notes: t.description }, displayCategory as any, academicPeriods);
+                                                                    generateReceipt(schoolDetails, student, { id: t.id as any, amount: t.credit, date: t.date, notes: t.description, periodId: t.periodId }, displayCategory as any, academicPeriods);
                                                                 }}
                                                             >
                                                                 <Receipt className="h-4 w-4" />

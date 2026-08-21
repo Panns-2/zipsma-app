@@ -49,6 +49,11 @@ async function handler(req: Request) {
 
             const db = getAdminDb();
 
+            let isBulk = false;
+            let bulkDistribution: any[] = [];
+            let parentId = '';
+            let pendingFeeType = 'main'; // default
+
             // 1. If we have a payRef (the new system), look up the context
             const actualRef = payRef || clientReference;
             if (actualRef && actualRef.startsWith('PAY-')) {
@@ -59,7 +64,14 @@ async function handler(req: Request) {
                     studentId = pendingData?.studentId;
                     schoolId = pendingData?.schoolId;
                     periodId = pendingData?.periodId || periodId;
+                    pendingFeeType = pendingData?.feeType || 'main';
                     
+                    if (pendingData?.isBulk) {
+                        isBulk = true;
+                        bulkDistribution = pendingData?.bulkDistribution || [];
+                        parentId = pendingData?.parentId || '';
+                    }
+
                     // Prioritize our stored description which has itemized details
                     if (pendingData?.description) {
                         description = pendingData.description;
@@ -71,12 +83,12 @@ async function handler(req: Request) {
                         originalAmount = pendingData.amount;
                     }
                     
-                    console.log(`[${timestamp}] Hubtel Sync: Found context for ${actualRef} -> Student: ${studentId}, School: ${schoolId}`);
+                    console.log(`[${timestamp}] Hubtel Sync: Found context for ${actualRef} -> Student: ${studentId}, School: ${schoolId}, isBulk: ${isBulk}, feeType: ${pendingFeeType}`);
                 }
             }
 
             // Fallback parsing for legacy studentId from ClientReference if still missing
-            if (!studentId && clientReference) {
+            if (!studentId && clientReference && !isBulk) {
                 let ref = clientReference;
                 if (ref.startsWith('REF-')) ref = ref.substring(4);
                 
@@ -91,88 +103,117 @@ async function handler(req: Request) {
                 }
             }
 
-            if (!studentId || !schoolId) {
+            if ((!studentId && !isBulk) || !schoolId) {
                 console.error(`[${timestamp}] Hubtel Sync Error: Could not resolve studentId (${studentId}) or schoolId (${schoolId}) for ref ${actualRef}`);
                 return NextResponse.json({ status: 'ignored', message: 'Could not resolve student context' });
             }
-            const compositeId = `${schoolId.toUpperCase()}_${studentId.trim().toUpperCase()}`;
-            const studentRef = db.collection('students').doc(compositeId);
-            const studentDoc = await studentRef.get();
 
-            const ledgerEntry = {
-                id: `hubtel_${transactionId || Date.now()}`,
-                date: new Date().toISOString().split('T')[0],
-                description: description,
-                type: 'payment',
-                category: 'Fees Payment',
-                categoryId: 'fees_payment',
-                debit: 0,
-                credit: Number(originalAmount) || 0,
-                periodId: periodId,
-                recordedBy: 'system_hubtel',
-                reference: transactionId || clientReference,
-                timestamp: new Date().toISOString()
-            };
+            const processStudentLedger = async (targetStudentId: string, creditAmount: number) => {
+                const compositeId = `${schoolId!.toUpperCase()}_${targetStudentId.trim().toUpperCase()}`;
+                const studentRef = db.collection('students').doc(compositeId);
+                const studentDoc = await studentRef.get();
 
-            if (!studentDoc.exists) {
-                // Fallback for old records without schoolId prefix (for migration)
-                const fallbackRef = db.collection('students').doc(studentId.trim().toUpperCase());
-                const fallbackDoc = await fallbackRef.get();
-                
-                if (fallbackDoc.exists && fallbackDoc.data()?.schoolId === schoolId.toUpperCase()) {
-                    console.log(`[${timestamp}] Hubtel Sync: Using legacy fallback for student ${studentId}`);
+                // Determine the correct category based on feeType
+                // This ensures the payment appears in the correct tab on the admin page
+                let ledgerCategory: string;
+                let ledgerCategoryId: string;
+                if (pendingFeeType === 'daily') {
+                    ledgerCategory = 'Daily Recurring Fees Payment';
+                    ledgerCategoryId = 'daily_fees_payment';
+                } else if (pendingFeeType === 'mixed') {
+                    ledgerCategory = 'Fees Payment (Mixed)';
+                    ledgerCategoryId = 'fees_payment_mixed';
+                } else {
+                    ledgerCategory = 'Fees Payment';
+                    ledgerCategoryId = 'fees_payment';
+                }
+
+                const ledgerEntry = {
+                    id: `hubtel_${transactionId || Date.now()}_${targetStudentId}`,
+                    date: new Date().toISOString().split('T')[0],
+                    description: description,
+                    type: 'payment',
+                    category: ledgerCategory,
+                    categoryId: ledgerCategoryId,
+                    debit: 0,
+                    credit: Number(creditAmount) || 0,
+                    periodId: periodId,
+                    recordedBy: 'system_hubtel',
+                    reference: transactionId || clientReference,
+                    timestamp: new Date().toISOString()
+                };
+
+                if (!studentDoc.exists) {
+                    // Fallback for old records without schoolId prefix (for migration)
+                    const fallbackRef = db.collection('students').doc(targetStudentId.trim().toUpperCase());
+                    const fallbackDoc = await fallbackRef.get();
                     
-                    const ledger = fallbackDoc.data()?.ledger || [];
+                    if (fallbackDoc.exists && fallbackDoc.data()?.schoolId === schoolId!.toUpperCase()) {
+                        console.log(`[${timestamp}] Hubtel Sync: Using legacy fallback for student ${targetStudentId}`);
+                        
+                        const ledger = fallbackDoc.data()?.ledger || [];
+                        const exists = ledger.some((entry: any) => 
+                            (transactionId && (entry.reference === transactionId || entry.id === `hubtel_${transactionId}`)) || 
+                            (clientReference && entry.reference === clientReference)
+                        );
+
+                        if (exists) {
+                            console.log(`[${timestamp}] Hubtel Sync: Transaction ${transactionId || clientReference} already exists in legacy ledger for ${targetStudentId}.`);
+                            return;
+                        }
+
+                        await fallbackRef.update({
+                            ledger: FieldValue.arrayUnion(ledgerEntry)
+                        });
+                    } else {
+                        console.error(`[${timestamp}] Hubtel Sync Error: Student ${targetStudentId} not found with composite ID ${compositeId} or legacy ID`);
+                        return;
+                    }
+                } else {
+                    const ledger = studentDoc.data()?.ledger || [];
                     const exists = ledger.some((entry: any) => 
                         (transactionId && (entry.reference === transactionId || entry.id === `hubtel_${transactionId}`)) || 
                         (clientReference && entry.reference === clientReference)
                     );
 
                     if (exists) {
-                        console.log(`[${timestamp}] Hubtel Sync: Transaction ${transactionId || clientReference} already exists in legacy ledger.`);
-                        return NextResponse.json({ status: 'success', message: 'Already recorded' });
+                        console.log(`[${timestamp}] Hubtel Sync: Transaction ${transactionId || clientReference} already exists in ledger for ${targetStudentId}.`);
+                        return;
                     }
 
-                    await fallbackRef.update({
+                    await studentRef.update({
                         ledger: FieldValue.arrayUnion(ledgerEntry)
                     });
-                } else {
-                    console.error(`[${timestamp}] Hubtel Sync Error: Student ${studentId} not found with composite ID ${compositeId} or legacy ID`);
-                    return NextResponse.json({ status: 'error', message: 'Student not found' }, { status: 404 });
+
+                    // Trigger Push Notification
+                    try {
+                        await sendNotificationToUser(targetStudentId, {
+                            title: 'Payment Received',
+                            body: `GH¢${creditAmount} has been credited to the account. Thank you!`,
+                            data: {
+                                type: 'payment_success',
+                                studentId: targetStudentId,
+                                schoolId: schoolId!
+                            }
+                        });
+                    } catch (notifyError) {
+                        console.error(`Failed to send webhook payment notification for ${targetStudentId}:`, notifyError);
+                    }
                 }
+            };
+
+            if (isBulk) {
+                for (const dist of bulkDistribution) {
+                    if (dist.amount > 0) {
+                        await processStudentLedger(dist.studentId, dist.amount);
+                    }
+                }
+                console.log(`[${timestamp}] Hubtel Sync Success (Bulk): Distributed GH¢${amount} for parent ${parentId}`);
             } else {
-                const ledger = studentDoc.data()?.ledger || [];
-                const exists = ledger.some((entry: any) => 
-                    (transactionId && (entry.reference === transactionId || entry.id === `hubtel_${transactionId}`)) || 
-                    (clientReference && entry.reference === clientReference)
-                );
-
-                if (exists) {
-                    console.log(`[${timestamp}] Hubtel Sync: Transaction ${transactionId || clientReference} already exists in ledger.`);
-                    return NextResponse.json({ status: 'success', message: 'Already recorded' });
-                }
-
-                await studentRef.update({
-                    ledger: FieldValue.arrayUnion(ledgerEntry)
-                });
-
-                // Trigger Push Notification
-                try {
-                    await sendNotificationToUser(studentId, {
-                        title: 'Payment Received',
-                        body: `GH¢${originalAmount} has been credited to the account. Thank you!`,
-                        data: {
-                            type: 'payment_success',
-                            studentId: studentId,
-                            schoolId: schoolId
-                        }
-                    });
-                } catch (notifyError) {
-                    console.error('Failed to send webhook payment notification:', notifyError);
-                }
+                await processStudentLedger(studentId!, Number(originalAmount) || 0);
+                console.log(`[${timestamp}] Hubtel Sync Success: Updated ledger for Student: ${studentId}, Amount: GH¢${amount}, Period: ${periodId}, TxId: ${transactionId}`);
             }
 
-            console.log(`[${timestamp}] Hubtel Sync Success: Updated ledger for Student: ${studentId}, Amount: GH¢${amount}, Period: ${periodId}, TxId: ${transactionId}`);
             return NextResponse.json({ status: 'success' });
         } else {
             console.log(`[${timestamp}] Hubtel Callback Ignored: Transaction not successful. ResponseCode: ${ResponseCode}, Status: ${Status}, Data.Status: ${Data?.Status}`);

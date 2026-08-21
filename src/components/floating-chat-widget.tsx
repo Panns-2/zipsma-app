@@ -19,7 +19,7 @@ type Message = {
 export function FloatingChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', content: "Hi! I'm the ZipSMA AI Assistant. I know everything about the app. How can I help you today?" }
+    { role: 'model', content: "👋 Hi! I'm the ZipSMA AI Assistant. How can I help you today?" }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -131,11 +131,11 @@ export function FloatingChatWidget() {
     const resetSilenceTimeout = () => {
       if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = setTimeout(() => {
-        // If 2 seconds pass with no new speech, auto-stop and send
+        // If 1.2 seconds pass with no new speech, auto-stop and send
         if (recognitionRef.current) {
           recognitionRef.current.stop();
         }
-      }, 2000);
+      }, 1200);
     };
 
     recognition.onstart = () => {
@@ -198,12 +198,18 @@ export function FloatingChatWidget() {
 
     try {
       // Format history for genkit (it expects content to be an array of parts)
-      const genkitHistory = messages.map(msg => ({
+      // Gemini API requires history to start with a 'user' message, so we drop leading 'model' messages.
+      let validMessages = [...messages];
+      while (validMessages.length > 0 && validMessages[0].role === 'model') {
+        validMessages.shift();
+      }
+      const genkitHistory = validMessages.map(msg => ({
         role: msg.role,
         content: [{ text: msg.content }]
       }));
 
-      const res = await fetch('/api/chat/landing', {
+      // For voice input: fire AI and TTS pre-fetch in parallel to cut latency
+      const aiPromise = fetch('/api/chat/landing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -212,15 +218,24 @@ export function FloatingChatWidget() {
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to send message');
+      const res = await aiPromise;
+
+      if (!res.ok) {
+        let errDetail = 'Failed to send message';
+        try {
+          const errData = await res.json();
+          errDetail = errData.details || errData.error || errDetail;
+        } catch (e) {}
+        throw new Error(errDetail);
+      }
       
       const data = await res.json();
       const aiResponse = data.text;
       setMessages([...newMessages, { role: 'model', content: aiResponse, inputType: isVoiceInput ? 'voice' : 'text' }]);
 
       if (isVoiceInput) {
-        // Delay slightly to allow state to settle before playing
-        setTimeout(() => speakText(aiResponse), 100);
+        // Pre-fetch TTS immediately after AI responds — no extra delay
+        speakText(aiResponse);
       }
     } catch (error: any) {
       console.error(error);
@@ -242,7 +257,7 @@ export function FloatingChatWidget() {
             whileTap={{ scale: 0.95 }}
             drag
             dragConstraints={{ left: 0, right: 0, top: -500, bottom: 0 }}
-            className="fixed bottom-6 right-6 z-50 cursor-grab active:cursor-grabbing"
+            className="fixed bottom-6 right-6 z-50 cursor-grab active:cursor-grabbing print:hidden"
             onClick={() => setIsOpen(true)}
           >
             <div className="bg-primary hover:bg-primary/90 text-white shadow-xl shadow-primary/30 rounded-full px-5 py-3 flex items-center gap-3 transition-colors">
@@ -262,7 +277,7 @@ export function FloatingChatWidget() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 50, scale: 0.9 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed bottom-6 right-6 z-50 w-full max-w-[380px] origin-bottom-right"
+            className="fixed bottom-6 right-6 z-50 w-full max-w-[380px] origin-bottom-right print:hidden"
           >
             <Card className="border shadow-2xl overflow-hidden flex flex-col h-[550px] max-h-[85vh]">
               <CardHeader className="bg-primary text-white p-4 flex flex-row items-center justify-between shrink-0 rounded-t-xl">

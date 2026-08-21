@@ -11,7 +11,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Banknote, FilePlus, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Student, AcademicPeriod, FeeCategory, postLedgerTransaction, updateLedgerTransaction, LedgerTransaction } from '@/lib/data-store';
+import { Student, AcademicPeriod, FeeCategory, postLedgerTransaction, updateLedgerTransaction, LedgerTransaction, getStudentById, calculateStudentTotalBalance } from '@/lib/data-store';
 import { useToast } from '@/hooks/use-toast';
 import { Auth } from 'firebase/auth';
 import { Firestore } from 'firebase/firestore';
@@ -105,9 +105,9 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
 
             if (form.type === 'payment') {
                 if (form.category === 'fees_payment') {
-                    categoryName = 'Fees Payment';
+                    categoryName = 'Core School Fees';
                     categoryId = 'fees_payment';
-                    finalDescription = 'Fees Payment';
+                    finalDescription = 'Core School Fees Payment';
                 } else {
                     const selectedCategory = feeCategories.find(c => c.id === form.category);
                     categoryName = selectedCategory ? selectedCategory.name : form.category;
@@ -150,6 +150,32 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
             } else {
                 await postLedgerTransaction(db, auth, student.id || student.studentId, transactionData, student.schoolId);
                 toast({ title: "Transaction Recorded", description: "The transaction has been added to the ledger." });
+                
+                if (form.type === 'payment') {
+                    try {
+                        const studentIdToFetch = student.id || student.studentId || '';
+                        const updatedStudent = await getStudentById(db, student.schoolId, studentIdToFetch);
+                        if (updatedStudent) {
+                            const balanceInfo = calculateStudentTotalBalance(updatedStudent, academicPeriods, form.periodId || undefined, feeCategories);
+                            const newBalance = Math.max(0, balanceInfo.totalOutstanding);
+                            const balanceText = ` Remaining Balance: GHS ${newBalance.toFixed(2)}.`;
+                            
+                            await fetch('/api/sms/send', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    schoolId: student.schoolId,
+                                    message: `Payment Received: GHS ${amountValue} towards ${categoryName} for ${student.name}.${balanceText} Thank you.`,
+                                    recipient: 'specific',
+                                    specificParent: updatedStudent.parentId || updatedStudent.studentId,
+                                    notificationOnly: false
+                                })
+                            });
+                        }
+                    } catch (e) {
+                        console.error("SMS Error:", e);
+                    }
+                }
             }
             onSuccess();
             onClose();
@@ -247,7 +273,9 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Amount (GH¢)</Label>
+                            <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+                                {form.type === 'fee' && (filterType === 'daily' || feeCategories.find(c => c.id === form.category)?.isDaily) ? 'Daily Rate (GH¢)' : 'Amount (GH¢)'}
+                            </Label>
                             <Input 
                                 type="number" 
                                 placeholder="0.00" 

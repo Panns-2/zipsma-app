@@ -28,6 +28,9 @@ export async function GET(req: Request) {
         let targetPeriodId = periodId;
 
         let originalAmount = null;
+        let isBulk = false;
+        let bulkDistribution: any[] = [];
+        let parentId = '';
 
         // 0. If we have a reference starting with PAY-, we resolve the student/school first
         const incomingRef = clientReference || transactionIdParam;
@@ -40,10 +43,16 @@ export async function GET(req: Request) {
                 targetSchoolId = pData?.schoolId || targetSchoolId;
                 targetPeriodId = pData?.periodId || targetPeriodId;
                 originalAmount = pData?.amount;
+                
+                if (pData?.isBulk) {
+                    isBulk = true;
+                    bulkDistribution = pData?.bulkDistribution || [];
+                    parentId = pData?.parentId || '';
+                }
             }
         }
 
-        if (!targetSchoolId || !targetStudentId) {
+        if (!targetSchoolId || (!targetStudentId && !isBulk)) {
             return NextResponse.json({ error: 'Could not resolve school or student for this reference' }, { status: 400 });
         }
 
@@ -121,67 +130,85 @@ export async function GET(req: Request) {
         const isSuccess = status === 'Success' || status === 'Successful' || result.ResponseCode === '0000' || (transaction as any).ResponseCode === '0000';
 
         if (isSuccess) {
-            // 2. Update the student ledger if successful
-            const compositeId = `${schoolId.toUpperCase()}_${studentId.trim().toUpperCase()}`;
-            const studentRef = db.collection('students').doc(compositeId);
-            const studentDoc = await studentRef.get();
+            const processStudentLedger = async (studentIdToUpdate: string, creditAmount: number) => {
+                const compositeId = `${targetSchoolId!.toUpperCase()}_${studentIdToUpdate.trim().toUpperCase()}`;
+                const studentRef = db.collection('students').doc(compositeId);
+                const studentDoc = await studentRef.get();
 
-            if (!studentDoc.exists) {
-                return NextResponse.json({ error: 'Student not found in database' }, { status: 404 });
-            }
+                if (!studentDoc.exists) {
+                    console.error(`Status Verify Error: Student ${studentIdToUpdate} not found`);
+                    return false;
+                }
 
-            const studentData = studentDoc.data();
-            const ledger = studentData?.ledger || [];
+                const studentData = studentDoc.data();
+                const ledger = studentData?.ledger || [];
 
-            // Check if transaction already exists in ledger to prevent duplicates
-            const exists = ledger.some((entry: any) => 
-                (actualTxId && entry.reference === actualTxId) || 
-                (clientReference && entry.reference === clientReference) || 
-                (actualTxId && entry.id === `hubtel_${actualTxId}`)
-            );
+                // Check if transaction already exists in ledger to prevent duplicates
+                const exists = ledger.some((entry: any) => 
+                    (actualTxId && entry.reference === actualTxId) || 
+                    (clientReference && entry.reference === clientReference) || 
+                    (actualTxId && entry.id === `hubtel_${actualTxId}`)
+                );
 
-            if (exists) {
-                return NextResponse.json({ 
-                    status: 'success', 
-                    message: 'Payment was already recorded in your ledger.',
-                    transactionId: actualTxId,
-                    amount
+                if (exists) {
+                    return true;
+                }
+
+                const ledgerEntry = {
+                    id: `hubtel_${actualTxId || Date.now()}_${studentIdToUpdate}`,
+                    date: new Date().toISOString().split('T')[0],
+                    description: description,
+                    type: 'payment',
+                    category: 'Fees Payment',
+                    categoryId: 'fees_payment',
+                    debit: 0,
+                    credit: Number(creditAmount) || 0,
+                    periodId: targetPeriodId,
+                    recordedBy: 'system_hubtel_verify',
+                    reference: actualTxId || clientReference,
+                    timestamp: new Date().toISOString()
+                };
+
+                await studentRef.update({
+                    ledger: FieldValue.arrayUnion(ledgerEntry)
                 });
-            }
 
-            const ledgerEntry = {
-                id: `hubtel_${actualTxId || Date.now()}`,
-                date: new Date().toISOString().split('T')[0],
-                description: description,
-                type: 'payment',
-                category: 'Fees Payment',
-                categoryId: 'fees_payment',
-                debit: 0,
-                credit: Number(originalAmount || amount) || 0,
-                periodId: periodId,
-                recordedBy: 'system_hubtel_verify',
-                reference: actualTxId || clientReference,
-                timestamp: new Date().toISOString()
+                try {
+                    const schoolName = schoolData?.name || 'School';
+                    await sendNotificationToUser(studentIdToUpdate, {
+                        title: 'Payment Successful',
+                        body: `GH¢${creditAmount} has been received for ${studentData?.firstName || 'your student'}. Thank you!`,
+                        data: {
+                            type: 'payment_success',
+                            studentId: studentIdToUpdate,
+                            schoolId: targetSchoolId!
+                        }
+                    });
+                } catch (notifyError) {
+                    console.error(`Failed to send payment notification for ${studentIdToUpdate}:`, notifyError);
+                }
+                
+                return true;
             };
 
-            await studentRef.update({
-                ledger: FieldValue.arrayUnion(ledgerEntry)
-            });
-
-            // 3. Trigger Push Notification to Parent
-            try {
-                const schoolName = schoolData?.name || 'School';
-                await sendNotificationToUser(studentId, {
-                    title: 'Payment Successful',
-                    body: `GH¢${originalAmount || amount} has been received for ${studentData?.firstName || 'your student'}. Thank you!`,
-                    data: {
-                        type: 'payment_success',
-                        studentId: studentId,
-                        schoolId: schoolId
+            // 2. Update the student ledger(s) if successful
+            if (isBulk) {
+                let allSuccess = true;
+                for (const dist of bulkDistribution) {
+                    if (dist.amount > 0) {
+                        const success = await processStudentLedger(dist.studentId, dist.amount);
+                        if (!success) allSuccess = false;
                     }
-                });
-            } catch (notifyError) {
-                console.error('Failed to send payment notification:', notifyError);
+                }
+                
+                if (!allSuccess) {
+                     return NextResponse.json({ error: 'Some student ledgers could not be updated' }, { status: 500 });
+                }
+            } else {
+                const success = await processStudentLedger(targetStudentId!, Number(originalAmount || amount) || 0);
+                if (!success) {
+                    return NextResponse.json({ error: 'Student not found in database' }, { status: 404 });
+                }
             }
 
             return NextResponse.json({ 

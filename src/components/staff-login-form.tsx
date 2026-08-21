@@ -68,7 +68,13 @@ export default function StaffLoginForm() {
             description: `Welcome back, ${staffData.name}!`,
           });
           
-          router.push('/staff/dashboard');
+          if (staffData.role === 'Gatekeeper') {
+            router.push('/gate');
+          } else if (staffData.role === 'Accountant') {
+            router.push(`/admin/dashboard?schoolId=${staffData.schoolId}`);
+          } else {
+            router.push('/staff/dashboard');
+          }
         } else {
           // If no staff document exists under their uid, sign them out
           await auth.signOut();

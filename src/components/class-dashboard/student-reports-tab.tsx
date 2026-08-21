@@ -277,7 +277,7 @@ export function StudentReportsTab({ students, schoolId, className }: StudentRepo
 
     {/* Hidden printable component */}
     {reportToPrint && studentToPrint && (
-      <div className="hidden print:block absolute top-0 left-0 w-full bg-white z-50">
+      <div className="hidden print:block w-full bg-white">
         <GESReportCard 
           report={reportToPrint}
           student={studentToPrint}

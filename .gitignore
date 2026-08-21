@@ -37,3 +37,4 @@ recent_*.json
 school_payments.json
 very_recent.json
 users.json
+recovered_data_store*.js

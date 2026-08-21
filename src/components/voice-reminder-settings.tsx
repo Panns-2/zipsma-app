@@ -203,7 +203,7 @@ export function VoiceReminderSettings({ schoolId }: { schoolId: string }) {
                             <div className="flex flex-col gap-4">
                                 <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/30">
                                     <div className="space-y-0.5">
-                                        <Label htmlFor="voice-reminder-enabled" className="text-base flex items-center gap-2"><Mic className="w-4 h-4"/> Enable Automated Voice Calls (via Sendexa)</Label>
+                                        <Label htmlFor="voice-reminder-enabled" className="text-base flex items-center gap-2"><Mic className="w-4 h-4"/> Enable Automated Voice Calls (via Arkesel)</Label>
                                         <p className="text-sm text-muted-foreground">
                                             Turn on or off the automated Text-to-Speech voice calls for fee reminders.
                                         </p>
@@ -308,7 +308,7 @@ export function VoiceReminderSettings({ schoolId }: { schoolId: string }) {
                                                 <AlertDialogHeader>
                                                     <AlertDialogTitle>Send Real Voice Reminders?</AlertDialogTitle>
                                                     <AlertDialogDescription>
-                                                        This will send ACTUAL Voice Calls to all parents with outstanding balances. This action will incur costs on your Sendexa account.
+                                                        This will send ACTUAL Voice Calls to all parents with outstanding balances. This action will incur costs on your Arkesel account.
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
                                                 <AlertDialogFooter>

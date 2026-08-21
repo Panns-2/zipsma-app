@@ -3,7 +3,7 @@ import { getAdminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: Request) {
     try {
-        const { schoolId, studentId, amount, email, studentName, description, periodId } = await req.json();
+        const { schoolId, studentId, amount, email, studentName, description, periodId, feeType, isBulk, parentId, bulkDistribution } = await req.json();
 
         if (!schoolId || !studentId || !amount) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -31,17 +31,26 @@ export async function POST(req: Request) {
         const clientReference = `PAY-${randomStr}`;
 
         // 3. Store the mapping in a pending_payments collection
-        await db.collection('pending_payments').doc(clientReference).set({
+        const pendingData: any = {
             schoolId,
             studentId,
             studentName,
             amount: Number(amount),
             periodId: periodId || 'U',
             description: description || 'School Fee Payment',
+            feeType: feeType || 'main', // 'daily' | 'main' | 'mixed'
             status: 'pending',
             createdAt: new Date().toISOString(),
             email: email || `${studentId}@noemail.com`
-        });
+        };
+
+        if (isBulk && bulkDistribution) {
+            pendingData.isBulk = true;
+            pendingData.parentId = parentId;
+            pendingData.bulkDistribution = bulkDistribution;
+        }
+
+        await db.collection('pending_payments').doc(clientReference).set(pendingData);
 
         // 4. Prepare Hubtel Invoice request
         const host = req.headers.get('host') || '';
@@ -50,8 +59,8 @@ export async function POST(req: Request) {
         
         // We now only send the payRef in the callback, keeping the studentId private
         const callbackUrl = `${cleanBaseUrl}/api/hubtel?payRef=${clientReference}`;
-        const returnUrl = `${cleanBaseUrl}/dashboard?payment=success&ref=${clientReference}`;
-        const cancellationUrl = `${cleanBaseUrl}/dashboard?payment=cancelled`;
+        const returnUrl = `${cleanBaseUrl}/parent/dashboard?payment=success&ref=${clientReference}`;
+        const cancellationUrl = `${cleanBaseUrl}/parent/dashboard?payment=cancelled`;
 
         const payload = {
             totalAmount: Number(amount),
@@ -68,11 +77,11 @@ export async function POST(req: Request) {
             PaymentChannels: 'mobilemoney,card,bankaccount',
             items: [
                 {
-                    name: 'School Fee Payment',
+                    name: (isBulk ? 'Family Bulk Fees' : `Fee - ${studentName}`).substring(0, 30),
                     quantity: 1,
                     unitPrice: Number(amount),
                     totalPrice: Number(amount),
-                    description: `Payment for ${studentName}`
+                    description: (description || `Payment for ${studentName}`).substring(0, 100)
                 }
             ]
         };

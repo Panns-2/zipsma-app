@@ -18,19 +18,22 @@ export function useFCM(userId: string | null, schoolId: string | null) {
     }, []);
 
     const requestPermission = useCallback(async () => {
-        const messaging = services.messaging;
         if (!userId || typeof window === 'undefined') return false;
         
-        if (!messaging) {
-            toast({
-                title: "Not Supported",
-                description: "Push notifications are not supported in this browser or are still initializing.",
-                variant: "destructive"
-            });
-            return false;
-        }
-
         try {
+            const { getMessaging, isSupported: checkSupport } = await import('firebase/messaging');
+            const supported = await checkSupport();
+            
+            if (!supported) {
+                toast({
+                    title: "Not Supported",
+                    description: "Push notifications require a secure context (HTTPS) or Safari PWA (Add to Home Screen) on mobile devices.",
+                    variant: "destructive"
+                });
+                return false;
+            }
+
+            const messaging = getMessaging(services.app);
             const status = await Notification.requestPermission();
             setPermission(status);
             
@@ -75,42 +78,56 @@ export function useFCM(userId: string | null, schoolId: string | null) {
     }, [services, userId, schoolId, toast]);
 
     useEffect(() => {
-        const messaging = services.messaging;
-        if (!messaging || !userId || typeof window === 'undefined') return;
+        if (!userId || typeof window === 'undefined') return;
 
-        // Auto-initialize if already granted
-        if (Notification.permission === 'granted') {
-            requestPermission();
-        }
+        let unsubscribe: (() => void) | undefined;
 
-        // Handle foreground messages
-        const unsubscribe = onMessage(messaging, (payload) => {
-            console.log('Foreground message received:', payload);
-            
-            // 1. Show the toast (in-app)
-            toast({
-                title: payload.notification?.title || 'New Message',
-                description: payload.notification?.body || '',
-            });
-            
-            // 2. Play sound
+        const setupFCM = async () => {
             try {
-                const audio = new Audio('/notification-sound.mp3');
-                audio.play().catch(e => console.log('Audio autoplay blocked', e));
-            } catch (e) {
-                console.log('Audio playback failed', e);
-            }
+                const { getMessaging, isSupported: checkSupport } = await import('firebase/messaging');
+                const supported = await checkSupport();
+                if (!supported) return;
 
-            // 3. Show a native system notification if app is in foreground but user wants system tray visibility
-            if (Notification.permission === 'granted') {
-                new Notification(payload.notification?.title || 'New Message', {
-                    body: payload.notification?.body || '',
-                    icon: '/logo.png', // Adjust as needed
+                const messaging = getMessaging(services.app);
+
+                // Auto-initialize if already granted
+                if (Notification.permission === 'granted') {
+                    requestPermission();
+                }
+
+                // Handle foreground messages
+                unsubscribe = onMessage(messaging, (payload) => {
+                    console.log('Foreground message received:', payload);
+                    
+                    toast({
+                        title: payload.notification?.title || 'New Message',
+                        description: payload.notification?.body || '',
+                    });
+                    
+                    try {
+                        const audio = new Audio('/notification-sound.mp3');
+                        audio.play().catch(e => console.log('Audio autoplay blocked', e));
+                    } catch (e) {
+                        console.log('Audio playback failed', e);
+                    }
+
+                    if (Notification.permission === 'granted') {
+                        new Notification(payload.notification?.title || 'New Message', {
+                            body: payload.notification?.body || '',
+                            icon: '/logo.png',
+                        });
+                    }
                 });
+            } catch (e) {
+                console.error("Error setting up FCM foreground listener:", e);
             }
-        });
+        };
 
-        return () => unsubscribe();
+        setupFCM();
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
     }, [services, userId, schoolId, toast, requestPermission]);
 
     return { fcmToken, permission, requestPermission };

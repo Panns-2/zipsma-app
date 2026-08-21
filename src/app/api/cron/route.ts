@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase-admin';
 import { sendNotificationToUser } from '@/lib/notification-utils';
+import { sendArkeselVoiceBroadcast, generateTtsAudioBuffer } from '@/lib/arkesel';
 
 // --- More Reliable Helper function to check the schedule ---
 const isTimeToSend = (settings: any, schoolId: string) => {
@@ -165,6 +166,16 @@ export async function GET(request: Request) {
         
         const schoolData = schoolDoc.data();
 
+        const parentsSnapshot = await db.collection('parents').where('schoolId', '==', schoolId.toUpperCase()).get();
+        const parentsMap = new Map<string, string>();
+        parentsSnapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.phone) {
+                parentsMap.set(doc.id, data.phone);
+            }
+        });
+
+
         // -------------------------
         // 1. FEE REMINDERS
         // -------------------------
@@ -192,6 +203,15 @@ export async function GET(request: Request) {
                 } else {
                     console.log(`CRON: Processing fees for school ${schoolId}.`);
                     
+                    const ghanaTime = new Date().toLocaleString("en-US", {timeZone: "Africa/Accra", hour: 'numeric', hour12: false});
+                    const currentHour = parseInt(ghanaTime, 10);
+                    let currentGreeting = "Good morning";
+                    if (currentHour >= 12 && currentHour < 17) {
+                        currentGreeting = "Good afternoon";
+                    } else if (currentHour >= 17) {
+                        currentGreeting = "Good evening";
+                    }
+                    
                     const currentPeriodId = schoolData.currentPeriodId;
                     if (currentPeriodId) {
                         const periodDoc = await db.collection('academicPeriods').doc(currentPeriodId).get();
@@ -216,7 +236,7 @@ export async function GET(request: Request) {
                       
                             for (const studentDoc of studentsSnapshot.docs) {
                                 const studentData = studentDoc.data();
-                                const parentPhoneNumber = studentData.parentPhone || studentData.parentPhoneNumber;
+                                const parentPhoneNumber = (studentData.parentId ? parentsMap.get(studentData.parentId) : null) || studentData.parentPhone || studentData.parentPhoneNumber;
 
                                 if (!parentPhoneNumber || String(parentPhoneNumber).toLowerCase() === 'n/a') continue;
                                 if (studentData.muteReminders) continue;
@@ -331,7 +351,8 @@ export async function GET(request: Request) {
                                             .replace(/{total_balance}/g, `GHS ${totalOutstanding.toFixed(2)}`)
                                             .replace(/{week}/g, latestStageName)
                                             .replace(/{date}/g, currentDeadlineDate)
-                                            .replace(/{name}/g, studentData.name || "your ward");
+                                            .replace(/{name}/g, studentData.name || "your ward")
+                                            .replace(/{greeting}/g, currentGreeting);
                                             
                                         pushMessage = message;
                                     
@@ -380,20 +401,29 @@ export async function GET(request: Request) {
                                         }
                                     }
 
-                                    // Sendexa Voice Call
-                                    if (voiceEval.shouldSend && voiceSettings?.isEnabled && schoolData.sendexaApiKey) {
-                                        const sendexaApiKey = schoolData.sendexaApiKey;
+                                    // Arkesel Voice Call
+                                    if (voiceEval.shouldSend && voiceSettings?.isEnabled && schoolData.arkeselApiKey) {
+                                        const arkeselApiKey = schoolData.arkeselApiKey;
+                                        const arkeselVoiceCallerId = schoolData.arkeselVoiceCallerId;
                                         const formattedPhone = formatPhoneNumber(parentPhoneNumber);
-                                        const voiceLanguage = studentData.preferredVoiceLanguage || 'en-GH';
                                         
                                         if (formattedPhone) {
                                             schoolLog.attempted++;
+                                            const formatCurrencyForTTS = (amount: number) => {
+                                                const cedis = Math.floor(amount);
+                                                const pesewas = Math.round((amount - cedis) * 100);
+                                                if (cedis === 0 && pesewas > 0) return `${pesewas} pesewas`;
+                                                if (pesewas === 0) return `${cedis} Ghana Cedis`;
+                                                return `${cedis} Ghana Cedis and ${pesewas} pesewas`;
+                                            };
+
                                             const voiceMessage = (voiceSettings.message || "Your ward's fee balance is {balance}. Please make payment as soon as possible.")
-                                                .replace(/{balance}/g, `GHS ${outstandingBalance.toFixed(2)}`)
-                                                .replace(/{total_balance}/g, `GHS ${totalOutstanding.toFixed(2)}`)
+                                                .replace(/{balance}/g, formatCurrencyForTTS(outstandingBalance))
+                                                .replace(/{total_balance}/g, formatCurrencyForTTS(totalOutstanding))
                                                 .replace(/{week}/g, latestStageName)
                                                 .replace(/{date}/g, currentDeadlineDate)
-                                                .replace(/{name}/g, studentData.name || "your ward");
+                                                .replace(/{name}/g, studentData.name || "your ward")
+                                                .replace(/{greeting}/g, currentGreeting);
                                             
                                             pushMessage = voiceMessage;
 
@@ -402,43 +432,38 @@ export async function GET(request: Request) {
                                                 totalMessagesSent++;
                                             } else {
                                                 try {
-                                                    // Add + to the phone number for E.164 format if missing
-                                                    const e164Phone = formattedPhone.startsWith('233') ? `+${formattedPhone}` : formattedPhone;
+                                                    // Ensure phone is 233 format (formatPhoneNumber does this already if valid)
+                                                    const e164Phone = formattedPhone;
                                                     
-                                                    // Try the standard /v1/voice/calls endpoint with native TTS type
-                                                    const sendexaResponse = await fetch('https://api.sendexa.co/v1/voice/calls', {
-                                                        method: 'POST',
-                                                        headers: {
-                                                            'Content-Type': 'application/json',
-                                                            'Authorization': `Basic ${sendexaApiKey}`
-                                                        },
-                                                        body: JSON.stringify({
-                                                            to: e164Phone,
-                                                            from: schoolData.sendexaVoiceCallerId || 'SENDEXA',
-                                                            message: voiceMessage,
-                                                            voice: 'female',
-                                                            language: voiceLanguage || 'en',
-                                                            callType: 'OUTBOUND_OTP',
-                                                            destinationType: 'MOBILE'
-                                                        })
+                                                    // Generate TTS WAV buffer using Abena AI
+                                                    const voiceFileData = await generateTtsAudioBuffer(voiceMessage, studentData.preferredVoiceLanguage);
+
+                                                    const arkeselResponse = await sendArkeselVoiceBroadcast({
+                                                        apiKey: arkeselApiKey,
+                                                        recipients: [e164Phone],
+                                                        voiceFileData: voiceFileData,
+                                                        callerId: arkeselVoiceCallerId
                                                     });
 
-                                                    if (sendexaResponse.ok) {
+                                                    // If the request didn't throw an error in the helper, we can assume it succeeded.
+                                                    // We'll also check that it doesn't explicitly declare a failure status.
+                                                    const isExplicitError = arkeselResponse.status === 'error' || arkeselResponse.error;
+                                                    
+                                                    if (!isExplicitError) {
                                                         schoolLog.sent++;
                                                         totalMessagesSent++;
                                                     } else {
                                                         schoolLog.failed++;
                                                         totalMessagesFailed++;
-                                                        const responseText = await sendexaResponse.text();
-                                                        const errorMsg = `CRON: Failed to send Sendexa Voice call to ${parentPhoneNumber} (School: ${schoolId}). Body: ${responseText}`;
+                                                        const errorMsg = `CRON: Failed to send Arkesel Voice call to ${parentPhoneNumber} (School: ${schoolId}). Data: ${JSON.stringify(arkeselResponse)}`;
                                                         console.error(errorMsg);
                                                         errors.push(errorMsg);
-                                                        schoolLog.details.push({ phone: parentPhoneNumber, error: responseText });
+                                                        schoolLog.details.push({ phone: parentPhoneNumber, error: JSON.stringify(arkeselResponse) });
                                                     }
                                                 } catch (voiceError: any) {
                                                     schoolLog.failed++;
                                                     totalMessagesFailed++;
-                                                    const errorMsg = `CRON: Network error while triggering Sendexa Voice Call: ${voiceError.message}`;
+                                                    const errorMsg = `CRON: Error while triggering Arkesel Voice Call: ${voiceError.message}`;
                                                     console.error(errorMsg);
                                                     errors.push(errorMsg);
                                                     schoolLog.details.push({ phone: parentPhoneNumber, error: voiceError.message });
@@ -491,15 +516,15 @@ export async function GET(request: Request) {
             const settings = settingsDoc.data();
             
             if (!settings) {
-                console.log(`CRON: Skipping daily fees for school ${schoolId}. Reason: No reminder settings found.`);
+                console.log(`CRON: Skipping daily recurring fees for school ${schoolId}. Reason: No reminder settings found.`);
                 skippedSchools.push({ schoolId, type: 'daily_fees', reason: 'No settings' });
             } else {
                 const { shouldSend, reason } = isManualTrigger ? { shouldSend: true, reason: '' } : isTimeToSend(settings, schoolId);
                 if (!shouldSend) {
-                    console.log(`CRON: Skipping daily fees for school ${schoolId}. Reason: ${reason}`);
+                    console.log(`CRON: Skipping daily recurring fees for school ${schoolId}. Reason: ${reason}`);
                     skippedSchools.push({ schoolId, type: 'daily_fees', reason });
                 } else {
-                    console.log(`CRON: Processing daily fees for school ${schoolId}.`);
+                    console.log(`CRON: Processing daily recurring fees for school ${schoolId}.`);
                     
                     const currentPeriodId = schoolData.currentPeriodId;
                     if (currentPeriodId) {
@@ -527,7 +552,7 @@ export async function GET(request: Request) {
                   
                         for (const studentDoc of studentsSnapshot.docs) {
                             const studentData = studentDoc.data();
-                            const parentPhoneNumber = studentData.parentPhone || studentData.parentPhoneNumber;
+                            const parentPhoneNumber = (studentData.parentId ? parentsMap.get(studentData.parentId) : null) || studentData.parentPhone || studentData.parentPhoneNumber;
 
                             if (!parentPhoneNumber || String(parentPhoneNumber).toLowerCase() === 'n/a') continue;
                             if (studentData.muteReminders) continue;
@@ -573,7 +598,7 @@ export async function GET(request: Request) {
                             const outstandingBalance = Math.max(0, totalBilled - totalPaid);
 
                             if (outstandingBalance > 0) {
-                                const message = (settings.message || "Your ward {name} has an outstanding daily fee balance of {balance}. Please make payment. Thank you.")
+                                const message = (settings.message || "Your ward {name} has an outstanding daily recurring fee balance of {balance}. Please make payment. Thank you.")
                                     .replace(/{balance}/g, `GHS ${outstandingBalance.toFixed(2)}`)
                                     .replace(/{name}/g, studentData.name || "your ward");
                                 
@@ -616,7 +641,7 @@ export async function GET(request: Request) {
                                                     schoolLog.failed++;
                                                     totalMessagesFailed++;
                                                     const responseText = await response.text();
-                                                    const errorMsg = `CRON: Failed to send daily fee SMS to ${parentPhoneNumber} (School: ${schoolId}). Status: ${response.status}. Body: ${responseText}`;
+                                                    const errorMsg = `CRON: Failed to send daily recurring fee SMS to ${parentPhoneNumber} (School: ${schoolId}). Status: ${response.status}. Body: ${responseText}`;
                                                     console.error(errorMsg);
                                                     errors.push(errorMsg);
                                                     schoolLog.details.push({ phone: parentPhoneNumber, error: responseText });
@@ -631,7 +656,7 @@ export async function GET(request: Request) {
                                 // Push Notification
                                 try {
                                     const notificationPayload = {
-                                        title: 'Daily Fee Reminder',
+                                        title: 'Daily Recurring Fee Reminder',
                                         body: message,
                                         data: { schoolId, type: 'daily_fee_reminder', studentId: studentDoc.id }
                                     };
@@ -653,7 +678,7 @@ export async function GET(request: Request) {
                     }
                 }
             }
-        } // end daily fee reminders
+        } // end daily recurring fee reminders
 
         // -------------------------
         // 2. CALENDAR REMINDERS
@@ -731,7 +756,7 @@ export async function GET(request: Request) {
                             // Send to all students
                             for (const studentDoc of studentsSnapshot.docs) {
                                 const studentData = studentDoc.data();
-                                const parentPhoneNumber = studentData.parentPhone || studentData.parentPhoneNumber;
+                                const parentPhoneNumber = (studentData.parentId ? parentsMap.get(studentData.parentId) : null) || studentData.parentPhone || studentData.parentPhoneNumber;
 
                                 if (!parentPhoneNumber || String(parentPhoneNumber).toLowerCase() === 'n/a') continue;
 
@@ -871,7 +896,7 @@ export async function GET(request: Request) {
 
                         // Send to anyone who was not marked present today
                         for (const studentData of classStudentsArr) {
-                            const parentPhoneNumber = studentData.parentPhone || studentData.parentPhoneNumber;
+                            const parentPhoneNumber = (studentData.parentId ? parentsMap.get(studentData.parentId) : null) || studentData.parentPhone || studentData.parentPhoneNumber;
                             if (!parentPhoneNumber || String(parentPhoneNumber).toLowerCase() === 'n/a') continue;
                             if (studentData.muteReminders) continue;
 

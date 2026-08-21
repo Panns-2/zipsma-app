@@ -36,6 +36,15 @@ service cloud.firestore {
              );
     }
 
+    function isStaff(schoolId) {
+      return request.auth != null && schoolId != null && 
+             (
+              (exists(/databases/$(database)/documents/staff/$(request.auth.uid)) && 
+               (get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.schoolId.upper() == schoolId.upper()))
+              || isSchoolAdmin(schoolId)
+             );
+    }
+
     // --- Global Application Settings ---
 
     match /settings/{settingId} {
@@ -69,6 +78,12 @@ service cloud.firestore {
       allow update: if isSchoolAdmin(request.resource.data.schoolId) || isSchoolAdmin(resource.data.schoolId);
       allow delete: if isSchoolAdmin(resource.data.schoolId);
     }
+    match /libraryResources/{resourceId} {
+      allow read: if true;
+      allow create: if isSchoolAdmin(request.resource.data.schoolId) || isStaff(request.resource.data.schoolId);
+      allow update: if isSchoolAdmin(request.resource.data.schoolId) || isSchoolAdmin(resource.data.schoolId) || isStaffAdmin(request.resource.data.schoolId);
+      allow delete: if isSchoolAdmin(resource.data.schoolId) || isStaffAdmin(resource.data.schoolId);
+    }
     match /schoolCalendar/{eventId} {
         allow read: if true;
         allow create: if isSchoolAdmin(request.resource.data.schoolId);
@@ -100,7 +115,22 @@ service cloud.firestore {
                          isSchoolAdmin(request.resource.data.get('schoolId', null)) ||
                          isStaffAdmin(resource.data.get('schoolId', null)) ||
                          isStaffAdmin(request.resource.data.get('schoolId', null)) ||
-                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendance', 'ledger', 'schoolId']);
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendance', 'ledger', 'schoolId', 'pin', 'pinChangeRequired']);
+    }
+
+    // --- Rules for Parents ---
+    match /parents/{parentId} {
+        allow create: if isSchoolAdmin(request.resource.data.get('schoolId', null));
+        allow read, delete: if isSchoolAdmin(resource.data.get('schoolId', null));
+        
+        allow get, list: if true;
+
+        allow update: if isSuperAdmin() || 
+                         isSchoolAdmin(resource.data.get('schoolId', null)) || 
+                         isSchoolAdmin(request.resource.data.get('schoolId', null)) ||
+                         isStaffAdmin(resource.data.get('schoolId', null)) ||
+                         isStaffAdmin(request.resource.data.get('schoolId', null)) ||
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pin', 'pinChangeRequired']);
     }
 
     // --- Staff, Finances, and Admin Data ---
@@ -129,6 +159,12 @@ service cloud.firestore {
       allow list: if isSchoolAdmin(resource.data.schoolId);
     }
 
+    match /budgets/{docId} {
+      allow create: if isSchoolAdmin(request.resource.data.schoolId);
+      allow read, update, delete: if isSchoolAdmin(resource.data.schoolId);
+      allow list: if isSchoolAdmin(resource.data.schoolId);
+    }
+
     match /reportSettings/{schoolId} {
         allow read: if true; // Publicly readable for dashboards
         allow write: if isSchoolAdmin(schoolId);
@@ -136,9 +172,9 @@ service cloud.firestore {
 
     match /studentReports/{reportId} {
         allow read: if true; // Publicly readable for parents/students
-        allow create: if isSchoolAdmin(request.resource.data.schoolId);
-        allow update, delete: if isSchoolAdmin(resource.data.schoolId);
-        allow list: if isSchoolAdmin(resource.data.schoolId);
+        allow create: if isStaff(request.resource.data.schoolId);
+        allow update, delete: if isStaff(resource.data.schoolId);
+        allow list: if isStaff(resource.data.schoolId);
     }
 
     match /academicPeriods/{periodId} {
@@ -168,6 +204,13 @@ service cloud.firestore {
     match /pending_payments/{docId} {
       allow read, delete: if isSchoolAdmin(resource.data.schoolId);
       allow list: if isSchoolAdmin(resource.data.schoolId);
+    }
+
+    match /admissionBills/{docId} {
+      allow read: if true;
+      allow create, update: if isSchoolAdmin(request.resource.data.schoolId);
+      allow delete: if isSchoolAdmin(resource.data.schoolId);
+      allow list: if true;
     }
   }
 }

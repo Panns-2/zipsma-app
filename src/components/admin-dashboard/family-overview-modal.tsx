@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Users } from 'lucide-react';
-import { Student, FeeCategory, AcademicPeriod, calculateDailyOutstanding, calculateInstallmentOutstandingBalance } from '@/lib/data-store';
+import { Student, FeeCategory, AcademicPeriod, calculateStudentTotalBalance } from '@/lib/data-store';
 import { GradientAvatar } from '@/components/gradient-avatar';
 
 interface FamilyOverviewModalProps {
@@ -11,6 +11,7 @@ interface FamilyOverviewModalProps {
     students: Student[];
     feeCategories: FeeCategory[];
     currentPeriod?: AcademicPeriod;
+    periods: AcademicPeriod[];
 }
 
 export const FamilyOverviewModal: React.FC<FamilyOverviewModalProps> = ({
@@ -19,42 +20,33 @@ export const FamilyOverviewModal: React.FC<FamilyOverviewModalProps> = ({
     parentStudent,
     students,
     feeCategories,
-    currentPeriod
+    currentPeriod,
+    periods
 }) => {
     const familyMembers = useMemo(() => {
         if (!parentStudent) return [];
-        const pId = parentStudent.parentPhone || parentStudent.parentId || parentStudent.parentName;
+        const normalizeStr = (str?: string | null) => str ? str.trim().toLowerCase() : '';
+        const pId = normalizeStr(parentStudent.parentPhone) || normalizeStr(parentStudent.parentId) || normalizeStr(parentStudent.parentName);
         if (!pId) return [parentStudent];
 
         return students.filter(s => {
-            const spId = s.parentPhone || s.parentId || s.parentName;
+            const spId = normalizeStr(s.parentPhone) || normalizeStr(s.parentId) || normalizeStr(s.parentName);
             return spId === pId;
         });
     }, [parentStudent, students]);
 
     const familyDebts = useMemo(() => {
         return familyMembers.map(student => {
-            let mainDebt = 0;
-            if (currentPeriod) {
-                const { outstandingBalance } = calculateInstallmentOutstandingBalance(student, currentPeriod, feeCategories);
-                mainDebt = outstandingBalance;
-            }
-
-            const dailyCategories = feeCategories.filter(c => c.isDaily);
-            let dailyDebt = 0;
-            dailyCategories.forEach(cat => {
-                const debt = calculateDailyOutstanding(student, cat.id, feeCategories);
-                if (debt > 0) dailyDebt += debt;
-            });
-
+            const balanceInfo = calculateStudentTotalBalance(student, periods, currentPeriod?.id, feeCategories);
+            
             return {
                 student,
-                mainDebt,
-                dailyDebt,
-                totalDebt: mainDebt + dailyDebt
+                mainDebt: balanceInfo.mainData.balance,
+                dailyDebt: balanceInfo.dailyData.balance + balanceInfo.dailyAccruedInfo,
+                totalDebt: Math.max(0, balanceInfo.totalOutstanding)
             };
         });
-    }, [familyMembers, currentPeriod, feeCategories]);
+    }, [familyMembers, currentPeriod, feeCategories, periods]);
 
     const totalFamilyDebt = familyDebts.reduce((sum, item) => sum + Math.max(0, item.totalDebt), 0);
 

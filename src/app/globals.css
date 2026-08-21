@@ -140,3 +140,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ==============================
+   ADMISSION BILL PRINT STYLES
+   ============================== */
+@media print {
+  @page {
+    size: A5;
+    margin: 5mm;
+  }
+
+  /* Remove the A4 min-height so the bill content 
+     only takes as much vertical space as it needs */
+  .admission-bill-page {
+    min-height: 0 !important;
+    height: auto !important;
+  }
+}
+

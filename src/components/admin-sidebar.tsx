@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button";
-import { Archive, Book, Calendar, Home, LogOut, Send, Settings, ShieldCheck, Users, Wallet, HelpCircle } from "lucide-react";
+import { Archive, Book, BookOpen, Calendar, Home, LogOut, Send, Settings, ShieldCheck, Users, Wallet, HelpCircle, QrCode, GraduationCap, FileText } from "lucide-react";
 import Link from "next/link";
 import { ZipSMALogo } from "./zipsma-logo";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -17,6 +17,7 @@ interface AdminSidebarProps {
   isMobile?: boolean;
   feesActiveSubTab?: string;
   setFeesActiveSubTab?: (tab: string) => void;
+  userRole?: 'admin' | 'accountant';
 }
 
 export function AdminSidebar({ 
@@ -29,27 +30,36 @@ export function AdminSidebar({
     isMobile = false,
     feesActiveSubTab,
     setFeesActiveSubTab,
+    userRole = 'admin',
 }: AdminSidebarProps) {
-  const menuItems = [
+  const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'students', label: 'Students', icon: Users },
-    { id: 'families', label: 'Families', icon: Users },
+    { id: 'promote-students', label: 'Class Promotions', icon: GraduationCap },
     { id: 'staff', label: 'Manage Staff', icon: ShieldCheck },
     { id: 'attendance', label: 'Attendance', icon: Calendar },
     { id: 'academic-reports', label: 'Academic Reports', icon: Book },
+    { id: 'lesson-plans', label: 'Lesson Plans', icon: BookOpen },
     { id: 'calendar', label: 'School Calendar', icon: Calendar },
     { id: 'communication', label: 'Announcements', icon: Send },
     { id: 'fees', label: 'Fees Management', icon: Wallet, subItems: [
-        { id: 'main', label: 'Main School Fees' },
-        { id: 'daily', label: 'Daily Fee' }
+        { id: 'main', label: 'Core School Fees' },
+        { id: 'daily', label: 'Daily Recurring Fee' }
     ]},
+    { id: 'admission-bills', label: 'Admission Bills', icon: FileText },
     { id: 'finances', label: 'Finances', icon: Wallet },
+    { id: 'debtors', label: 'Debtors List', icon: Wallet },
+    { id: 'qr-generation', label: 'QR IDs', icon: QrCode },
     { id: 'archive', label: 'Archive', icon: Archive },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
+  const menuItems = userRole === 'accountant' 
+    ? allMenuItems.filter(item => ['dashboard', 'students', 'fees', 'finances'].includes(item.id))
+    : allMenuItems;
+
   return (
-    <aside className={`w-[280px] flex-shrink-0 flex-col p-4 border-r border-[#00205c]/20 bg-[#00205c] text-primary-foreground ${isMobile ? 'flex h-full' : 'hidden lg:flex sticky top-0 h-screen'}`}>
+    <aside className={`print:hidden w-[280px] flex-shrink-0 flex-col p-4 border-r border-[#00205c]/20 bg-[#00205c] text-primary-foreground ${isMobile ? 'flex h-full' : 'hidden lg:flex sticky top-0 h-screen'}`}>
         <div className="flex items-center gap-4 px-2 py-4 mb-6 relative">
             {logoUrl ? (
                 <Avatar className="h-12 w-12 border-2 border-white/20 shadow-sm">

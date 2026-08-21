@@ -158,7 +158,7 @@ function TeachersCornerContent() {
         const schoolId = sessionStorage.getItem('schoolId');
 
         if (staffClassName && schoolId) {
-            setDashboardUrl(`/staff/class/${encodeURIComponent(staffClassName)}?schoolId=${schoolId}`);
+            setDashboardUrl(`/staff/class?name=${encodeURIComponent(staffClassName)}&schoolId=${schoolId}`);
         }
     }, []);
     

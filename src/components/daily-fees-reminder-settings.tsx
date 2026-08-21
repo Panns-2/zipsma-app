@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const defaultMessage = `Dear Parent, this is a friendly reminder that {name}'s outstanding daily fee balance is {balance}. Please make a payment to avoid any inconvenience. Thank you`;
+const defaultMessage = `Dear Parent, this is a friendly reminder that {name}'s outstanding daily recurring fee balance is {balance}. Please make a payment to avoid any inconvenience. Thank you`;
 
 export function DailyFeesReminderSettings({ schoolId }: { schoolId: string }) {
     const { db } = useFirebase();
@@ -118,7 +118,7 @@ export function DailyFeesReminderSettings({ schoolId }: { schoolId: string }) {
             await setDoc(settingsRef, settingsToSave, { merge: true });
             toast({
                 title: 'Settings Saved',
-                description: 'Your daily fees reminder settings have been updated successfully.',
+                description: 'Your daily recurring fees reminder settings have been updated successfully.',
             });
         } catch (error) {
             console.error("Error saving settings: ", error);
@@ -176,8 +176,8 @@ export function DailyFeesReminderSettings({ schoolId }: { schoolId: string }) {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-heading-lg">Daily Fees Reminder Settings</CardTitle>
-                    <CardDescription>Configure automated SMS reminders for parents about outstanding daily fee balances (e.g., feeding, transport).</CardDescription>
+                    <CardTitle className="text-heading-lg">Daily Recurring Fees Reminder Settings</CardTitle>
+                    <CardDescription>Configure automated SMS reminders for parents about outstanding daily recurring fee balances (e.g., feeding, transport).</CardDescription>
                 </CardHeader>
                 {isLoading ? (
                      <div className="flex items-center justify-center p-8">
@@ -188,9 +188,9 @@ export function DailyFeesReminderSettings({ schoolId }: { schoolId: string }) {
                         <CardContent className="space-y-6">
                             <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/30">
                                 <div className="space-y-0.5">
-                                    <Label htmlFor="daily-reminder-enabled" className="text-base">Enable Daily Fee Reminders</Label>
+                                    <Label htmlFor="daily-reminder-enabled" className="text-base">Enable Daily Recurring Fee Reminders</Label>
                                     <p className="text-sm text-muted-foreground">
-                                        Turn on or off the automated daily fee reminder system.
+                                        Turn on or off the automated daily recurring fee reminder system.
                                     </p>
                                 </div>
                                 <Switch
@@ -260,7 +260,7 @@ export function DailyFeesReminderSettings({ schoolId }: { schoolId: string }) {
                                         <div className="flex items-center gap-2 mt-2">
                                             <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                                             <Info className="w-3 h-3" />
-                                            Use <code className="bg-slate-100 px-1 rounded">{`{name}`}</code> for student name and <code className="bg-slate-100 px-1 rounded">{`{balance}`}</code> for the outstanding daily fee balance.
+                                            Use <code className="bg-slate-100 px-1 rounded">{`{name}`}</code> for student name and <code className="bg-slate-100 px-1 rounded">{`{balance}`}</code> for the outstanding daily recurring fee balance.
                                         </p>
                                         </div>
                                     </div>
@@ -292,7 +292,7 @@ export function DailyFeesReminderSettings({ schoolId }: { schoolId: string }) {
                                                 <AlertDialogHeader>
                                                     <AlertDialogTitle>Send Real SMS Reminders?</AlertDialogTitle>
                                                     <AlertDialogDescription>
-                                                        This will send ACTUAL SMS messages to all parents with outstanding daily fee balances. This action will incur costs on your Hubtel account.
+                                                        This will send ACTUAL SMS messages to all parents with outstanding daily recurring fee balances. This action will incur costs on your Hubtel account.
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
                                                 <AlertDialogFooter>
@@ -331,7 +331,7 @@ export function DailyFeesReminderSettings({ schoolId }: { schoolId: string }) {
                             Recent Execution Logs
                         </CardTitle>
                         <CardDescription>
-                            Review the history of automated daily fee reminder attempts for this school.
+                            Review the history of automated daily recurring fee reminder attempts for this school.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>

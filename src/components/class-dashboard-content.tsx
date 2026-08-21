@@ -3,7 +3,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
-import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { getStudentsByClass, setAttendance, Student, Homework, getHomeworkForClass, addHomework, deleteHomework, signOutUser, getAcademicPeriods, AcademicPeriod } from '@/lib/data-store';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LogOut, Users, Loader2, BookCopy, PlusCircle, Trash2, GraduationCap, Bot, Sparkles, LayoutDashboard, Cake, Printer, HelpCircle } from 'lucide-react';
 import { ZipSMALogo } from '@/components/zipsma-logo';
 import { useToast } from '@/hooks/use-toast';
-import { WeeklyAttendanceTab, TermAttendanceTab, ManageHomeworkTab, ClassAnnouncementsTab, StudentReportsTab } from './class-dashboard';
+import { WeeklyAttendanceTab, TermAttendanceTab, ManageHomeworkTab, ClassAnnouncementsTab, StudentReportsTab, ManageELibraryTab, StaffLessonPlansTab } from './class-dashboard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -47,12 +47,11 @@ const itemVariants: Variants = {
 
 export default function ClassDashboardContent() {
     const router = useRouter();
-    const params = useParams();
     const searchParams = useSearchParams();
     const { toast } = useToast();
     const { auth, db } = useFirebase();
     
-    const className = Array.isArray(params.className) ? params.className[0] : params.className;
+    const className = searchParams.get('name');
     const decodedClassName = useMemo(() => className ? decodeURIComponent(className).trim() : '', [className]);
     const schoolId = searchParams.get('schoolId');
 
@@ -267,7 +266,7 @@ export default function ClassDashboardContent() {
                 </div>
 
                 <div className="container mx-auto px-4 -mt-24 md:-mt-32 relative z-20">
-                    <Card className="border-0 shadow-2xl bg-white/95 backdrop-blur-md rounded-3xl overflow-hidden mb-8">
+                    <Card className="border-0 shadow-2xl bg-white/95 backdrop-blur-md rounded-3xl overflow-hidden mb-8 print:hidden">
                         <CardContent className="p-6 md:p-10 flex flex-col md:flex-row justify-between items-center gap-8">
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="flex-1 text-center md:text-left">
                                 <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 mb-4">
@@ -350,6 +349,18 @@ export default function ClassDashboardContent() {
                                 >
                                     Student Reports
                                 </TabsTrigger>
+                                <TabsTrigger 
+                                    value="library" 
+                                    className="whitespace-nowrap rounded-full px-6 py-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                                >
+                                    Manage E-Library
+                                </TabsTrigger>
+                                <TabsTrigger 
+                                    value="lesson-plans" 
+                                    className="whitespace-nowrap rounded-full px-6 py-2.5 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
+                                >
+                                    Lesson Plans
+                                </TabsTrigger>
                             </TabsList>
                         </div>
 
@@ -414,6 +425,25 @@ export default function ClassDashboardContent() {
                                     <StudentReportsTab 
                                         students={students}
                                         schoolId={schoolId}
+                                        className={decodedClassName}
+                                    />
+                                </motion.div>
+                            </TabsContent>
+
+                            <TabsContent value="library" className="mt-0 focus-visible:outline-none focus-visible:ring-0 print:hidden">
+                                <motion.div variants={itemVariants}>
+                                    <ManageELibraryTab 
+                                        schoolId={schoolId} 
+                                        className={decodedClassName} 
+                                    />
+                                </motion.div>
+                            </TabsContent>
+
+                            <TabsContent value="lesson-plans" className="mt-0 focus-visible:outline-none focus-visible:ring-0 print:hidden">
+                                <motion.div variants={itemVariants}>
+                                    <StaffLessonPlansTab 
+                                        staffId={sessionStorage.getItem('staffId') || ''}
+                                        schoolId={schoolId || ''}
                                         className={decodedClassName}
                                     />
                                 </motion.div>
